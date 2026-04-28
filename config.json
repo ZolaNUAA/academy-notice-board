@@ -1,0 +1,27 @@
+{
+  "admins": {
+    "rootzola85": {
+      "role": "root",
+      "hash": "782a5e394683a585837713dbfbce1d02$cddac38c6c28729d5fa734f9c83bb95837c4ea3b4357abf059f917606ee1dc0b"
+    },
+    "nuaaccst16": {
+      "role": "admin",
+      "hash": "14b2ed0ba7326b443dde78d60287bbdb$52e9e5a068492a99345fc8f07c6e996a90480751d40f8b7d3f43d392e4712bcf"
+    },
+    "renshi": {
+      "role": "admin",
+      "hash": "d5c9bebdcb4fcf64a85bbce8cca2d27e$e96f894ec368ffec7926a62c6a77e4f813c87c7cf6d68042054e949a136357f1"
+    }
+  },
+  "version": 1,
+  "visits": 80,
+  "lastVisit": "2026-04-28T16:21:39.582Z",
+  "webhookSecret": "981626e776fbf416e952d8ef3064b566",
+  "limits": {
+    "maxBodySize": 2097152,
+    "maxFileSize": 20242880,
+    "requestTimeout": 30000,
+    "maxLogSize": 10485760,
+    "pageLimit": 30
+  }
+}
