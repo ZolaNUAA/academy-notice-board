@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: academy-notice-board
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
