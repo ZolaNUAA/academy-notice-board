@@ -1,0 +1,14 @@
+appid: your-appid
+services:
+  website:
+    type: static
+    build:
+      dockerFile: Dockerfile
+      entrypoint: npm start
+  server:
+    type: node
+    envVariables:
+      NODE_ENV: production
+    scaling:
+      minInstance: 1
+      maxInstance: 1
