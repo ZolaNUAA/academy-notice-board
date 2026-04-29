@@ -25,16 +25,43 @@ const GITHUB_CONFIG_PATH = 'data/config.json';
 let lastBackupTime = 0;
 const BACKUP_DEBOUNCE_MS = 5000;
 
+// Git operation retry config
+const GIT_MAX_RETRIES = 3;
+const GIT_RETRY_DELAY_MS = 2000;
+
 function getDataFileContent() {
   try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8')); } catch { return []; }
 }
 
-// Commit data to GitHub
-function commitToGitHub(message, filePath, data) {
+// Enhanced Git operation logger
+function logGitOp(action, target, status, details = {}) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    category: 'GIT',
+    action,
+    target,
+    status, // 'SUCCESS', 'FAILED', 'RETRY', 'SKIPPED'
+    ...details
+  };
+  const line = JSON.stringify(entry);
+  console.log(`[GitOp] ${action} ${target} -> ${status}`, details.error ? `(${details.error})` : '');
+  logOperation('GIT_OP', entry);
+  return entry;
+}
+
+// Commit data to GitHub with retry logic
+async function commitToGitHub(message, filePath, data, retries = GIT_MAX_RETRIES) {
   const token = process.env.GITHUB_TOKEN;
-  if (!token) return;
+  if (!token) {
+    logGitOp('COMMIT', filePath, 'SKIPPED', { reason: 'GITHUB_TOKEN not configured' });
+    return false;
+  }
+
   const now = Date.now();
-  if (now - lastBackupTime < BACKUP_DEBOUNCE_MS) return;
+  if (now - lastBackupTime < BACKUP_DEBOUNCE_MS) {
+    logGitOp('COMMIT', filePath, 'SKIPPED', { reason: 'Debounce active' });
+    return false;
+  }
   lastBackupTime = now;
 
   const https = require('https');
@@ -51,45 +78,273 @@ function commitToGitHub(message, filePath, data) {
       };
       const req = https.request(options, (res) => {
         let d = '';
+        let statusCode = res.statusCode;
         res.on('data', c => d += c);
-        res.on('end', () => { try { resolve(JSON.parse(d).sha); } catch { resolve(null); } });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(d);
+            if (statusCode === 200) {
+              resolve(parsed.sha);
+            } else if (statusCode === 404) {
+              logGitOp('GET_SHA', path, 'SUCCESS', { reason: 'File not found, will create new' });
+              resolve(null);
+            } else {
+              logGitOp('GET_SHA', path, 'FAILED', { statusCode, error: parsed.message || 'Unknown error' });
+              resolve(null);
+            }
+          } catch (e) {
+            logGitOp('GET_SHA', path, 'FAILED', { error: 'JSON parse error: ' + e.message });
+            resolve(null);
+          }
+        });
       });
-      req.on('error', () => resolve(null));
+      req.on('error', (e) => {
+        logGitOp('GET_SHA', path, 'FAILED', { error: 'Network error: ' + e.message });
+        resolve(null);
+      });
       req.end();
     });
   };
 
-  const updateFile = async (sha, path) => {
+  const updateFile = async (sha, path, retryCount = 0) => {
     const body = { message: message || `backup: ${new Date().toISOString()}`, content, branch: GITHUB_BRANCH };
     if (sha) body.sha = sha;
     const postData = JSON.stringify(body);
-    const options = {
-      hostname: 'api.github.com',
-      path: `/repos/${repo}/contents/${path}`,
-      method: 'PUT',
-      headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-    };
-    const req = https.request(options, (res) => { res.on('data', () => {}); res.on('end', () => {}); });
-    req.on('error', () => {});
-    req.write(postData);
-    req.end();
+
+    return new Promise((resolve) => {
+      const options = {
+        hostname: 'api.github.com',
+        path: `/repos/${repo}/contents/${path}`,
+        method: 'PUT',
+        headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+      };
+
+      let statusCode = 0;
+      let responseData = '';
+
+      const req = https.request(options, (res) => {
+        statusCode = res.statusCode;
+        res.on('data', c => responseData += c);
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(responseData);
+            if (statusCode === 200 || statusCode === 201) {
+              logGitOp('COMMIT', path, 'SUCCESS', {
+                sha: parsed.content?.sha?.substring(0, 7),
+                commit: parsed.commit?.sha?.substring(0, 7),
+                message
+              });
+              resolve(true);
+            } else {
+              const errorMsg = parsed.message || `HTTP ${statusCode}`;
+              logGitOp('COMMIT', path, 'FAILED', { statusCode, error: errorMsg });
+
+              // Retry logic
+              if (retryCount < retries && (statusCode === 403 || statusCode === 500 || statusCode === 502 || statusCode === 503)) {
+                logGitOp('COMMIT', path, 'RETRY', { attempt: retryCount + 1, maxRetries: retries });
+                setTimeout(() => updateFile(sha, path, retryCount + 1).then(resolve), GIT_RETRY_DELAY_MS);
+              } else {
+                resolve(false);
+              }
+            }
+          } catch (e) {
+            logGitOp('COMMIT', path, 'FAILED', { error: 'Response parse error: ' + e.message });
+            resolve(false);
+          }
+        });
+      });
+      req.on('error', (e) => {
+        logGitOp('COMMIT', path, 'FAILED', { error: 'Network error: ' + e.message });
+        if (retryCount < retries) {
+          logGitOp('COMMIT', path, 'RETRY', { attempt: retryCount + 1, maxRetries: retries });
+          setTimeout(() => updateFile(sha, path, retryCount + 1).then(resolve), GIT_RETRY_DELAY_MS);
+        } else {
+          resolve(false);
+        }
+      });
+      req.write(postData);
+      req.end();
+    });
   };
 
   // Backup notices.json
-  getSha(filePath).then(sha => updateFile(sha, filePath));
+  const sha = await getSha(filePath);
+  return await updateFile(sha, filePath);
+}
+
+// Commit binary file to GitHub (for uploads)
+async function commitFileToGitHub(localFilePath, githubPath, retries = GIT_MAX_RETRIES) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    logGitOp('COMMIT_FILE', githubPath, 'SKIPPED', { reason: 'GITHUB_TOKEN not configured' });
+    return false;
+  }
+
+  if (!fs.existsSync(localFilePath)) {
+    logGitOp('COMMIT_FILE', githubPath, 'SKIPPED', { reason: 'Local file not found', localPath: localFilePath });
+    return false;
+  }
+
+  const https = require('https');
+  const fileContent = fs.readFileSync(localFilePath);
+  const content = fileContent.toString('base64');
+  const repo = 'ZolaNUAA/academy-notice-board';
+  const fileSize = fileContent.length;
+
+  const getSha = (path) => {
+    return new Promise((resolve) => {
+      const options = {
+        hostname: 'api.github.com',
+        path: `/repos/${repo}/contents/${path}?ref=${GITHUB_BRANCH}`,
+        method: 'GET',
+        headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Accept': 'application/vnd.github.v3+json' }
+      };
+      const req = https.request(options, (res) => {
+        let d = '';
+        let statusCode = res.statusCode;
+        res.on('data', c => d += c);
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(d);
+            if (statusCode === 200) {
+              resolve(parsed.sha);
+            } else if (statusCode === 404) {
+              resolve(null);
+            } else {
+              logGitOp('GET_SHA', path, 'FAILED', { statusCode, error: parsed.message || 'Unknown' });
+              resolve(null);
+            }
+          } catch (e) {
+            resolve(null);
+          }
+        });
+      });
+      req.on('error', (e) => {
+        logGitOp('GET_SHA', path, 'FAILED', { error: e.message });
+        resolve(null);
+      });
+      req.end();
+    });
+  };
+
+  const updateFile = async (sha, path, retryCount = 0) => {
+    const message = `backup: upload ${path} (${(fileSize / 1024).toFixed(1)}KB)`;
+    const body = { message, content, branch: GITHUB_BRANCH };
+    if (sha) body.sha = sha;
+    const postData = JSON.stringify(body);
+
+    return new Promise((resolve) => {
+      const options = {
+        hostname: 'api.github.com',
+        path: `/repos/${repo}/contents/${path}`,
+        method: 'PUT',
+        headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+      };
+
+      let statusCode = 0;
+      let responseData = '';
+
+      const req = https.request(options, (res) => {
+        statusCode = res.statusCode;
+        res.on('data', c => responseData += c);
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(responseData);
+            if (statusCode === 200 || statusCode === 201) {
+              logGitOp('COMMIT_FILE', path, 'SUCCESS', {
+                size: `${(fileSize / 1024).toFixed(1)}KB`,
+                sha: parsed.content?.sha?.substring(0, 7)
+              });
+              resolve(true);
+            } else {
+              logGitOp('COMMIT_FILE', path, 'FAILED', { statusCode, error: parsed.message || `HTTP ${statusCode}` });
+              if (retryCount < retries && (statusCode >= 500)) {
+                setTimeout(() => updateFile(sha, path, retryCount + 1).then(resolve), GIT_RETRY_DELAY_MS);
+              } else {
+                resolve(false);
+              }
+            }
+          } catch (e) {
+            logGitOp('COMMIT_FILE', path, 'FAILED', { error: 'Response parse error' });
+            resolve(false);
+          }
+        });
+      });
+      req.on('error', (e) => {
+        logGitOp('COMMIT_FILE', path, 'FAILED', { error: e.message });
+        resolve(false);
+      });
+      req.write(postData);
+      req.end();
+    });
+  };
+
+  logGitOp('COMMIT_FILE', githubPath, 'STARTING', { localPath: localFilePath, size: `${(fileSize / 1024).toFixed(1)}KB` });
+  const sha = await getSha(githubPath);
+  return await updateFile(sha, githubPath);
 }
 
 // Backup notices.json
-function backupNotices() {
-  commitToGitHub('backup: auto-save notices data', GITHUB_DATA_PATH, getDataFileContent());
+async function backupNotices() {
+  const data = getDataFileContent();
+  logGitOp('BACKUP', 'notices.json', 'STARTING', { noticeCount: data.length });
+  const success = await commitToGitHub('backup: auto-save notices data', GITHUB_DATA_PATH, data);
+  if (!success) {
+    logGitOp('BACKUP', 'notices.json', 'FAILED', { reason: 'commitToGitHub returned false' });
+  }
+  return success;
 }
 
 // Backup config.json
-function backupConfig() {
+async function backupConfig() {
   try {
     const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
-    commitToGitHub('backup: auto-save config', GITHUB_CONFIG_PATH, cfg);
-  } catch (e) {}
+    logGitOp('BACKUP', 'config.json', 'STARTING');
+    const success = await commitToGitHub('backup: auto-save config', GITHUB_CONFIG_PATH, cfg);
+    if (!success) {
+      logGitOp('BACKUP', 'config.json', 'FAILED', { reason: 'commitToGitHub returned false' });
+    }
+    return success;
+  } catch (e) {
+    logGitOp('BACKUP', 'config.json', 'FAILED', { error: e.message });
+    return false;
+  }
+}
+
+// Backup a single uploaded file
+async function backupUploadFile(type, filename) {
+  const localDir = type === 'image' ? IMAGES_DIR : ATTACHMENTS_DIR;
+  const localPath = path.join(localDir, filename);
+  const githubPath = `data/uploads/${type}s/${filename}`;
+  return await commitFileToGitHub(localPath, githubPath);
+}
+
+// Backup all upload files to GitHub
+async function backupAllUploads() {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return;
+
+  logGitOp('BACKUP', 'uploads', 'STARTING', { type: 'all' });
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const type of ['image', 'attachment']) {
+    const dir = type === 'image' ? IMAGES_DIR : ATTACHMENTS_DIR;
+    if (!fs.existsSync(dir)) continue;
+
+    const files = fs.readdirSync(dir);
+    for (const file of files) {
+      const localPath = path.join(dir, file);
+      const githubPath = `data/uploads/${type}s/${file}`;
+      const ok = await commitFileToGitHub(localPath, githubPath);
+      if (ok) successCount++;
+      else failCount++;
+    }
+  }
+
+  logGitOp('BACKUP', 'uploads', 'COMPLETED', { success: successCount, failed: failCount });
+  return { successCount, failCount };
 }
 
 // Ensure upload directory exists
@@ -214,11 +469,14 @@ if (!fs.existsSync(DATA_FILE)) {
 async function restoreFromGitHub() {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
-    console.log('[Restore] 未配置 GITHUB_TOKEN，跳过从GitHub恢复');
+    logGitOp('RESTORE', 'all', 'SKIPPED', { reason: 'GITHUB_TOKEN not configured' });
     return;
   }
 
+  logGitOp('RESTORE', 'all', 'STARTING', { timestamp: new Date().toISOString() });
+
   const repo = 'ZolaNUAA/academy-notice-board';
+  const https = require('https');
 
   const getFileContent = (path) => {
     return new Promise((resolve) => {
@@ -230,22 +488,32 @@ async function restoreFromGitHub() {
       };
       const req = https.request(options, (res) => {
         let d = '';
+        let statusCode = res.statusCode;
         res.on('data', c => d += c);
         res.on('end', () => {
           try {
             const data = JSON.parse(d);
             if (data.content) {
               const content = Buffer.from(data.content, 'base64').toString('utf-8');
+              logGitOp('RESTORE', path, 'SUCCESS', { size: `${(data.size || 0) / 1024}KB` });
               resolve(JSON.parse(content));
+            } else if (statusCode === 404) {
+              logGitOp('RESTORE', path, 'SKIPPED', { reason: 'File not found on GitHub' });
+              resolve(null);
             } else {
+              logGitOp('RESTORE', path, 'FAILED', { statusCode, error: data.message || 'Unknown error' });
               resolve(null);
             }
-          } catch {
+          } catch (e) {
+            logGitOp('RESTORE', path, 'FAILED', { error: 'Parse error: ' + e.message });
             resolve(null);
           }
         });
       });
-      req.on('error', () => resolve(null));
+      req.on('error', (e) => {
+        logGitOp('RESTORE', path, 'FAILED', { error: 'Network error: ' + e.message });
+        resolve(null);
+      });
       req.end();
     });
   };
@@ -257,12 +525,19 @@ async function restoreFromGitHub() {
       const localNotices = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
       if (localNotices.length === 0 || notices.length > localNotices.length) {
         fs.writeFileSync(DATA_FILE, JSON.stringify(notices, null, 2), 'utf-8');
-        console.log(`[Restore] 从GitHub恢复 ${notices.length} 条通知到 data/notices.json`);
+        logGitOp('RESTORE', 'notices.json', 'SUCCESS', {
+          restoredCount: notices.length,
+          previousLocalCount: localNotices.length
+        });
       } else {
-        console.log(`[Restore] 本地已有 ${localNotices.length} 条通知，跳过notices恢复`);
+        logGitOp('RESTORE', 'notices.json', 'SKIPPED', {
+          reason: 'Local data is same or newer',
+          localCount: localNotices.length,
+          githubCount: notices.length
+        });
       }
     } else {
-      console.log('[Restore] GitHub上未找到notices备份数据');
+      logGitOp('RESTORE', 'notices.json', 'SKIPPED', { reason: 'No data on GitHub or parse failed' });
     }
 
     // Restore config.json
@@ -271,13 +546,21 @@ async function restoreFromGitHub() {
       const localConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
       if (!localConfig.admins || Object.keys(localConfig.admins).length < Object.keys(cfg.admins).length) {
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
-        console.log('[Restore] 从GitHub恢复config.json');
+        logGitOp('RESTORE', 'config.json', 'SUCCESS', { restoredAdmins: Object.keys(cfg.admins).length });
       } else {
-        console.log('[Restore] 本地config已存在，跳过恢复');
+        logGitOp('RESTORE', 'config.json', 'SKIPPED', {
+          reason: 'Local config is same or newer',
+          localAdmins: Object.keys(localConfig.admins).length,
+          githubAdmins: Object.keys(cfg.admins).length
+        });
       }
+    } else {
+      logGitOp('RESTORE', 'config.json', 'SKIPPED', { reason: 'No valid config on GitHub' });
     }
+
+    logGitOp('RESTORE', 'all', 'COMPLETED', { timestamp: new Date().toISOString() });
   } catch (e) {
-    console.log('[Restore] 从GitHub恢复失败:', e.message);
+    logGitOp('RESTORE', 'all', 'FAILED', { error: e.message });
   }
 }
 
@@ -667,17 +950,17 @@ function parseOwner(text) {
 function extractLinks(text) {
   const links = new Set();
 
-  // Standard URLs
+  // Standard URLs - stop at closing brackets/parentheses (including Chinese)
   const urlPatterns = [
-    /https?:\/\/[^\s\uFF08\u2018\u2019\u300C<>"'\\]+/gi,
-    /http:\/\/[^\s\uFF08\u2018\u2019\u300C<>"'\\]+/gi,
+    /https?:\/\/[^\s\uFF08\u2018\u2019\u300C<>"'\\（）\)\]\uff09\]]+/gi,
+    /http:\/\/[^\s\uFF08\u2018\u2019\u300C<>"'\\（）\)\]\uff09\]]+/gi,
   ];
 
   for (const pattern of urlPatterns) {
     let match;
     while ((match = pattern.exec(text)) !== null) {
-      // Clean trailing punctuation
-      let url = match[0].replace(/[。，,.。;；)>\]]+$/, '');
+      // Clean trailing punctuation (including Chinese brackets)
+      let url = match[0].replace(/[。，,.。;；)>\]\uff09\]]+$/, '');
       // Validate URL
       try {
         new URL(url.startsWith('http') ? url : 'http://' + url);
@@ -724,25 +1007,72 @@ function extractKeyPoints(body) {
 
 // Smart title extraction
 function extractTitle(block) {
-  // Try header format: 【标题】
-  const headerMatch = block.match(/^【([^】]+)】/);
-  if (headerMatch) {
-    const title = headerMatch[1].trim();
-    if (title.length >= 2 && title.length <= 50) return title;
+  // Try header format: 【标题】 or 【字段名】value
+  // Support both 【标题】 and 【字段名】value (without closing bracket)
+  const headerMatchWithBracket = block.match(/^【([^】]+)】/);
+  const headerMatchWithoutBracket = block.match(/^【([^】\n]+)/);
+
+  let workingBlock = block;
+  let isFieldHeader = false;
+
+  if (headerMatchWithBracket) {
+    const title = headerMatchWithBracket[1].trim();
+    if (title.length >= 2 && title.length <= 50) {
+      if (!/^(时间|地点|负责人|联系人|电话|主办|组织|发布|截止|报名)/.test(title)) {
+        return title;
+      }
+      // Field header detected - strip it from workingBlock
+      isFieldHeader = true;
+      workingBlock = block.replace(/^【[^】]+】/, '').trim();
+      // Strip leading ： or : if present
+      if (workingBlock.startsWith('：') || workingBlock.startsWith(':')) {
+        workingBlock = workingBlock.slice(1).trim();
+      }
+    }
+  } else if (headerMatchWithoutBracket) {
+    const title = headerMatchWithoutBracket[1].trim();
+    // Check if it's a field header - either starts with field name OR is very long (unclosed bracket case)
+    const isLikelyFieldHeader = /^(时间|地点|负责人|联系人|电话|主办|组织|发布|截止|报名)/.test(title);
+    const isTooLongForTitle = title.length > 30; // If > 30 chars, likely not a real title
+
+    if (title.length >= 2 && (isLikelyFieldHeader || isTooLongForTitle)) {
+      // Field header detected - strip it from workingBlock
+      // Use a more precise pattern to handle 【时间】：... format
+      isFieldHeader = true;
+      workingBlock = block.replace(/^【[^】\n]*】?/, '').trim();
+      // Also try to strip trailing ： or : if present
+      if (workingBlock.startsWith('：') || workingBlock.startsWith(':')) {
+        workingBlock = workingBlock.slice(1).trim();
+      }
+    } else if (title.length >= 2 && title.length <= 50) {
+      return title;
+    }
   }
 
-  // First meaningful line
-  const lines = block.split('\n').filter(l => l.trim().length > 0);
+  // First meaningful line from workingBlock (after field header is stripped)
+  const lines = workingBlock.split('\n').filter(l => l.trim().length > 0);
   for (const line of lines) {
     const cleaned = line.trim();
-    // Skip if looks like a date, phone, email
-    if (/^\d{4}[-/年]/.test(cleaned)) continue;
+    // Skip if looks like a date (with optional spaces)
+    if (/^\d{4}[\s\/-]*年/.test(cleaned)) continue;
     if (/^\d{3}[-]?\d{4,}/.test(cleaned)) continue;
     if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(cleaned)) continue;
+    // Skip if starts with field header punctuation
+    if (/^[：:、，,【】《》""''""''【】]/.test(cleaned)) continue;
     if (cleaned.length < 2) continue;
 
     // Return first 50 chars
     return cleaned.slice(0, 50);
+  }
+
+  // If all lines were skipped (e.g., content was only a date/time), try to extract content after the date
+  // Pattern: YYYY年MM月DD日 or YYYY-MM-DD with optional spaces
+  const dateMatch = workingBlock.match(/^(\d{4}[\s\/-]*年[\s\/-]*\d{1,2}[\s\/-]*月[\s\/-]*\d{1,2}[\s\/-]*[日号]?)/);
+  if (dateMatch) {
+    const afterDate = workingBlock.slice(dateMatch[0].length).trim();
+    if (afterDate.length >= 2) {
+      return afterDate.slice(0, 50);
+    }
   }
 
   return '通知';
@@ -755,8 +1085,15 @@ function toISO(dt) {
 
 function parseNoticeBlock(block, idx) {
   const title = extractTitle(block);
-  // Remove header from body
-  const body = block.replace(/^【[^】]+】/, '').trim();
+  // Remove header from body - handle both closed and unclosed headers
+  let body = block
+    .replace(/^【[^】]+】/, '') // Remove 【标题】 format
+    .replace(/^【[^】\n]+/, '') // Remove 【字段 without closing bracket
+    .trim();
+  // Also strip leading ： or : if present
+  if (body.startsWith('：') || body.startsWith(':')) {
+    body = body.slice(1).trim();
+  }
 
   // Extract date from header if present
   const headerMatch = block.match(/^【([^】]+)】/);
@@ -993,23 +1330,41 @@ function handleGET(req, res) {
 // Simple multipart parser
 function parseMultipart(buffer, boundary) {
   const parts = [];
-  const b = '--' + boundary;
+  // Build boundary with proper format
+  const boundaryBuffer = Buffer.from('--' + boundary);
+  const endBoundaryBuffer = Buffer.from('--' + boundary + '--');
+
   let idx = 0;
 
   while (idx < buffer.length) {
-    const bIdx = buffer.indexOf(b, idx);
+    // Find next boundary
+    const bIdx = buffer.indexOf(boundaryBuffer, idx);
     if (bIdx === -1) break;
 
-    const headerEnd = buffer.indexOf('\r\n\r\n', bIdx);
-    if (headerEnd === -1) { idx = bIdx + b.length; continue; }
+    // Check if this is the end boundary
+    const isEndBoundary = buffer.slice(bIdx, bIdx + endBoundaryBuffer.length).equals(endBoundaryBuffer);
 
-    const nextB = buffer.indexOf(b, headerEnd);
-    if (nextB === -1) break;
+    // Find end of this section (next boundary or end boundary)
+    const searchStart = bIdx + boundaryBuffer.length + 2; // +2 for \r\n after boundary
+    let endIdx;
+    if (isEndBoundary) {
+      endIdx = buffer.indexOf(Buffer.from('\r\n'), searchStart);
+      if (endIdx === -1) endIdx = buffer.length;
+    } else {
+      endIdx = buffer.indexOf(boundaryBuffer, searchStart);
+      if (endIdx === -1) break;
+    }
 
-    const headerRaw = buffer.slice(bIdx + b.length + 2, headerEnd).toString();
-    const contentStart = headerEnd + 4;
-    const contentEnd = nextB - 2;
-    const content = buffer.slice(contentStart, contentEnd);
+    // Extract headers and content between boundaries
+    const section = buffer.slice(bIdx, endIdx);
+    const headerEndIdx = section.indexOf(Buffer.from('\r\n\r\n'));
+    if (headerEndIdx === -1) {
+      idx = endIdx;
+      continue;
+    }
+
+    const headerRaw = section.slice(0, headerEndIdx).toString();
+    const content = section.slice(headerEndIdx + 4, section.length - 2); // -2 to remove trailing \r\n
 
     // Parse Content-Disposition
     const nameMatch = headerRaw.match(/name="([^"]+)"/);
@@ -1024,7 +1379,7 @@ function parseMultipart(buffer, boundary) {
       });
     }
 
-    idx = nextB + b.length;
+    idx = endIdx;
   }
   return parts;
 }
@@ -1035,6 +1390,8 @@ function handlePOST(req, res) {
   if (contentType.includes('multipart/form-data')) {
     const boundary = contentType.split('boundary=')[1];
     if (!boundary) return sendJSON(res, 400, { error: 'missing boundary' });
+
+    const maxFileSize = (config.limits?.maxFileSize) || 20 * 1024 * 1024;
 
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
@@ -1054,9 +1411,11 @@ function handlePOST(req, res) {
               return sendJSON(res, 400, { error: 'Attachment too large (max 5MB)' });
             }
             const result = await storage.uploadAttachment(part.content, part.filename);
-            attachments.push({ name: result.name, url: result.url, size: result.size });
+            // Store both original name (for display) and saved name (for URL)
+            attachments.push({ name: part.filename, savedName: result.name, url: result.url, size: result.size });
           }
         }
+        console.log('[DEBUG] Final attachments array:', attachments);
 
         if (!text) return sendJSON(res, 400, { error: 'text required' });
         const newNotices = parseRawInput(text);
@@ -1334,6 +1693,7 @@ async function handleBackupRestore(req, res) {
 
     const token = process.env.GITHUB_TOKEN;
     if (!token) {
+      logGitOp('RESTORE_VERSION', sha, 'FAILED', { reason: 'GITHUB_TOKEN not configured' });
       return sendJSON(res, 503, { error: 'GITHUB_TOKEN 未配置' });
     }
 
@@ -1350,28 +1710,40 @@ async function handleBackupRestore(req, res) {
         };
         const req = https.request(options, (res) => {
           let d = '';
+          let statusCode = res.statusCode;
           res.on('data', c => d += c);
           res.on('end', () => {
             try {
               const data = JSON.parse(d);
               if (data.content) {
                 const content = Buffer.from(data.content, 'base64').toString('utf-8');
+                logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'SUCCESS', { size: `${(data.size || 0) / 1024}KB` });
                 resolve(JSON.parse(content));
+              } else if (statusCode === 404) {
+                logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'FAILED', { reason: 'File not found at commit' });
+                resolve(null);
               } else {
+                logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'FAILED', { statusCode, error: data.message });
                 resolve(null);
               }
-            } catch {
+            } catch (e) {
+              logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'FAILED', { error: 'Parse error: ' + e.message });
               resolve(null);
             }
           });
         });
-        req.on('error', () => resolve(null));
+        req.on('error', (e) => {
+          logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'FAILED', { error: 'Network error: ' + e.message });
+          resolve(null);
+        });
         req.end();
       });
     };
 
+    logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'STARTING', { admin: admin.username });
+
     const notices = await getFileAtCommit();
-    if (!notices) {
+    if (!notices || !Array.isArray(notices)) {
       return sendJSON(res, 404, { error: '未找到该版本的备份数据' });
     }
 
@@ -1379,10 +1751,11 @@ async function handleBackupRestore(req, res) {
     writeNotices(notices);
 
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-    logOperation('BACKUP_RESTORE', { admin: admin.username, sha, ip, count: notices.length });
+    logOperation('BACKUP_RESTORE', { admin: admin.username, sha: sha.substring(0, 7), ip, count: notices.length });
 
     sendJSON(res, 200, { success: true, message: `已恢复到版本 ${sha.substring(0, 7)}，共 ${notices.length} 条通知`, count: notices.length });
   } catch(e) {
+    logGitOp('RESTORE_VERSION', 'unknown', 'FAILED', { error: e.message });
     sendJSON(res, 500, { error: '恢复失败: ' + e.message });
   }
 }

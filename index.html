@@ -959,7 +959,8 @@
 
     function renderBodyWithImages(text) {
       if (!text) return '';
-      // Step 1: Extract all markdown images and store them (BEFORE any HTML escaping)
+
+      // Step 1: Extract all markdown images and store them
       const imgMap = {};
       let imgIndex = 0;
       let result = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (full, alt, url) => {
@@ -969,24 +970,39 @@
         return key;
       });
 
-      // Step 2: Highlight dates (before HTML escape)
+      // Step 2: Preserve existing highlight spans BEFORE any escaping
+      const highlightMap = {};
+      let hlIndex = 0;
+      result = result.replace(/<span class="highlight[^"]*">([^<]*)<\/span>/gi, (full) => {
+        const key = `__HL_${hlIndex}__`;
+        highlightMap[key] = full;
+        hlIndex++;
+        return key;
+      });
+
+      // Step 3: Escape HTML in text (so literal < and > become &lt; and &gt;)
+      result = escapeHtml(result);
+
+      // Step 4: Highlight dates
       result = result.replace(/(\d+月\d+日)/g, '<span class="highlight-date">$1</span>');
       result = result.replace(/(\d{1,2}[./-]\d{1,2})/g, '<span class="highlight-date">$1</span>');
 
-      // Step 3: Highlight keywords
+      // Step 5: Highlight keywords
       const keywords = ['截止', '请于', '重要', '紧急', '务必', '必须', '报名', '申请', '提交', '完成', '@所有人'];
       for (const kw of keywords) {
         const regex = new RegExp(`(${kw})`, 'g');
         result = result.replace(regex, '<span class="highlight">$1</span>');
       }
 
-      // Step 4: Make URLs clickable (before HTML escape)
+      // Step 6: Make URLs clickable
       result = result.replace(/(https?:\/\/[^\s<）)>"]+)/g, '<a href="$1" target="_blank" class="highlight-link">$1</a>');
 
-      // Step 5: Escape HTML in text (now safe - images already extracted)
-      result = escapeHtml(result);
+      // Step 7: Restore preserved highlight spans (which contain < and >, now safe as HTML)
+      for (const [key, html] of Object.entries(highlightMap)) {
+        result = result.split(key).join(html);
+      }
 
-      // Step 6: Restore images as <img> tags
+      // Step 8: Restore images as <img> tags
       for (const [key, { alt, url }] of Object.entries(imgMap)) {
         result = result.split(key).join(`<img src="${url}" alt="${alt}" style="max-width:100%;max-height:200px;border-radius:4px;margin:8px 0;cursor:pointer;" onclick="showImageLightbox(this.src, this.alt)">`);
       }
