@@ -760,6 +760,7 @@
       editingNotice: null,
       loading: true,
       addPreview: null,
+      pendingAttachments: [], // 待上传的附件（仅文件名）
       stats: null,
       darkMode: localStorage.getItem('darkMode') === 'true',
       // Pagination
@@ -2010,6 +2011,23 @@
                   ${preview.links.map((l, i) => `<a href="${l}" target="_blank" class="preview-link" style="margin-right:8px">🔗 ${escapeHtml(l)}</a>`).join('')}
                 </div>
               ` : ''}
+              ${(preview.attachments && preview.attachments.length > 0) || state.pendingAttachments.length > 0 ? `
+                <div class="edit-links">
+                  <label>附件</label>
+                  ${(preview.attachments || []).map(a => {
+                    const ext = (a.name || '').split('.').pop() || '';
+                    const iconMap = { pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️', zip: '📦', rar: '📦', '7z': '📦', txt: '📃', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', mp4: '🎬', mp3: '🎵' };
+                    const icon = iconMap[ext.toLowerCase()] || '📎';
+                    return `<a href="${a.url}" target="_blank" class="preview-link" style="margin-right:8px">${icon} ${escapeHtml(a.name || '文件')}</a>`;
+                  }).join('')}
+                  ${state.pendingAttachments.map(a => {
+                    const ext = (a.name || '').split('.').pop() || '';
+                    const iconMap = { pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️', zip: '📦', rar: '📦', '7z': '📦', txt: '📃', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', mp4: '🎬', mp3: '🎵' };
+                    const icon = iconMap[ext.toLowerCase()] || '📎';
+                    return `<span class="preview-link" style="margin-right:8px;color:#888">${icon} ${escapeHtml(a.name)} (待上传)</span>`;
+                  }).join('')}
+                </div>
+              ` : ''}
             </div>
           `;
         } else {
@@ -2091,6 +2109,8 @@
       if (countEl) {
         countEl.textContent = files.length > 0 ? `(${files.length} 个文件)` : '';
       }
+      // Store pending attachments info for preview display
+      state.pendingAttachments = Array.from(files).map(f => ({ name: f.name, size: f.size }));
     };
 
 window.handleLogin = async function() {
@@ -2288,6 +2308,7 @@ window.handleLogin = async function() {
       textarea.value = '';
       fileInput.value = '';
       state.addPreview = null;
+      state.pendingAttachments = [];
       document.getElementById('previewContainer').innerHTML = '';
       state.showAddModal = false;
       render();
