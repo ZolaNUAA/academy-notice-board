@@ -2157,7 +2157,7 @@ window.handleLogin = async function() {
       });
       const verifyData = await verifyRes.json();
 
-      verifyRes.ok && verifyData.success) {
+      if (verifyRes.ok && verifyData.success) {
         state.verified = true;
         render();
       } else {
