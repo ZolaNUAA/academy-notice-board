@@ -4,8 +4,11 @@ node_modules/
 # Uploads (user content)
 uploads/
 
-# Data files (contains notices and operation logs)
+# Data files (contains notices, operation logs)
 data/
+
+# Config file (contains passwords and secrets)
+config.json
 
 # Environment files
 .env
