@@ -1,10 +1,11 @@
 # Dependencies
 node_modules/
 
-# Uploads (user content)
+# Uploads (user content) - 本地uploads不提交
 uploads/
 
-# Data files (contains notices, operation logs)
+# Data files (contains notices, operation logs, cloud uploads)
+# 注意：云端会自动备份数据到GitHub，本地commit时忽略，避免覆盖云端数据
 data/
 
 # Config file (contains passwords and secrets)
