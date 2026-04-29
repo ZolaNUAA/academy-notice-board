@@ -204,8 +204,8 @@
     .note-links a:hover { text-decoration: underline; }
 
     .note-attachments { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
-    .attachment-link { font-size: 12px; color: #059669; text-decoration: none; background: #d1fae5; padding: 3px 8px; border-radius: 4px; }
-    .attachment-link:hover { background: #a7f3d0; }
+    .attachment-link { font-size: 13px; color: #059669; text-decoration: none; background: #d1fae5; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attachment-link:hover { background: #a7f3d0; text-decoration: underline; }
 
     .note-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(0,0,0,0.1); }
     .note-date-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
@@ -1862,7 +1862,12 @@
           ` : ''}
           ${n.attachments && n.attachments.length > 0 ? `
             <div class="note-attachments">
-              ${n.attachments.map(a => `<a href="${a.url}" target="_blank" rel="noopener" class="attachment-link">📎 ${escapeHtml(a.name)}</a>`).join('')}
+              ${n.attachments.map(a => {
+                const ext = (a.name || '').split('.').pop() || '';
+                const iconMap = { pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️', zip: '📦', rar: '📦', '7z': '📦', txt: '📃', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', mp4: '🎬', mp3: '🎵' };
+                const icon = iconMap[ext.toLowerCase()] || '📎';
+                return `<a href="${a.url}" target="_blank" rel="noopener" class="attachment-link">${icon} ${escapeHtml(a.name || '文件')}</a>`;
+              }).join('')}
             </div>
           ` : ''}
           <div class="note-footer">
