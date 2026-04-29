@@ -8,5 +8,9 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.18.1",
+    "@cloudbase/storage": "^2.28.1"
   }
 }
