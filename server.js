@@ -1155,6 +1155,131 @@ async function handleLimits(req, res) {
   }
 }
 
+// ============ Backup Version Management (root only) ============
+
+// Get list of backup versions from GitHub
+async function handleBackupVersions(req, res) {
+  try {
+    const { password } = req.method === 'GET' ? {} : await parseJSONBody(req);
+    const admin = password ? checkAdminPassword(password) : null;
+    if (!admin || admin.role !== 'root') {
+      return sendJSON(res, 401, { error: '需要超级管理员密码' });
+    }
+
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) {
+      return sendJSON(res, 503, { error: 'GITHUB_TOKEN 未配置' });
+    }
+
+    const https = require('https');
+    const repo = 'ZolaNUAA/academy-notice-board';
+
+    const getVersions = () => {
+      return new Promise((resolve) => {
+        const options = {
+          hostname: 'api.github.com',
+          path: `/repos/${repo}/commits?path=${GITHUB_DATA_PATH}&per_page=20`,
+          method: 'GET',
+          headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Accept': 'application/vnd.github.v3+json' }
+        };
+        const req = https.request(options, (res) => {
+          let d = '';
+          res.on('data', c => d += c);
+          res.on('end', () => {
+            try {
+              const commits = JSON.parse(d);
+              const versions = commits.map(c => ({
+                sha: c.sha,
+                message: c.commit.message,
+                date: c.commit.author.date,
+                author: c.commit.author.name
+              }));
+              resolve(versions);
+            } catch {
+              resolve([]);
+            }
+          });
+        });
+        req.on('error', () => resolve([]));
+        req.end();
+      });
+    };
+
+    const versions = await getVersions();
+    sendJSON(res, 200, { versions });
+  } catch(e) {
+    sendJSON(res, 500, { error: '获取版本列表失败: ' + e.message });
+  }
+}
+
+// Restore notices from a specific GitHub commit
+async function handleBackupRestore(req, res) {
+  try {
+    const { password, sha } = await parseJSONBody(req);
+    const admin = checkAdminPassword(password);
+    if (!admin || admin.role !== 'root') {
+      return sendJSON(res, 401, { error: '需要超级管理员密码' });
+    }
+
+    if (!sha) {
+      return sendJSON(res, 400, { error: '缺少 sha 参数' });
+    }
+
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) {
+      return sendJSON(res, 503, { error: 'GITHUB_TOKEN 未配置' });
+    }
+
+    const https = require('https');
+    const repo = 'ZolaNUAA/academy-notice-board';
+
+    const getFileAtCommit = () => {
+      return new Promise((resolve) => {
+        const options = {
+          hostname: 'api.github.com',
+          path: `/repos/${repo}/contents/${GITHUB_DATA_PATH}?ref=${sha}`,
+          method: 'GET',
+          headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Accept': 'application/vnd.github.v3+json' }
+        };
+        const req = https.request(options, (res) => {
+          let d = '';
+          res.on('data', c => d += c);
+          res.on('end', () => {
+            try {
+              const data = JSON.parse(d);
+              if (data.content) {
+                const content = Buffer.from(data.content, 'base64').toString('utf-8');
+                resolve(JSON.parse(content));
+              } else {
+                resolve(null);
+              }
+            } catch {
+              resolve(null);
+            }
+          });
+        });
+        req.on('error', () => resolve(null));
+        req.end();
+      });
+    };
+
+    const notices = await getFileAtCommit();
+    if (!notices) {
+      return sendJSON(res, 404, { error: '未找到该版本的备份数据' });
+    }
+
+    // Save to local file
+    writeNotices(notices);
+
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    logOperation('BACKUP_RESTORE', { admin: admin.username, sha, ip, count: notices.length });
+
+    sendJSON(res, 200, { success: true, message: `已恢复到版本 ${sha.substring(0, 7)}，共 ${notices.length} 条通知`, count: notices.length });
+  } catch(e) {
+    sendJSON(res, 500, { error: '恢复失败: ' + e.message });
+  }
+}
+
 // Webhook config: get/set webhook secret
 function handleWebhookConfig(req, res) {
   if (req.method === 'GET') {
@@ -1409,6 +1534,16 @@ const server = http.createServer((req, res) => {
   // System limits config (root only)
   if (url.pathname === '/api/limits') {
     return handleLimits(req, res);
+  }
+
+  // Backup versions (root only)
+  if (url.pathname === '/api/backup/versions') {
+    return handleBackupVersions(req, res);
+  }
+
+  // Restore from backup (root only)
+  if (url.pathname === '/api/backup/restore') {
+    return handleBackupRestore(req, res);
   }
 
   // Serve uploaded files
