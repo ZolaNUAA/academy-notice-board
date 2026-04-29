@@ -944,7 +944,7 @@ function handlePOST(req, res) {
 
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         const buffer = Buffer.concat(chunks);
         const parts = parseMultipart(buffer, boundary);
@@ -959,16 +959,33 @@ function handlePOST(req, res) {
             if (part.content.length > maxFileSize) {
               return sendJSON(res, 400, { error: 'Attachment too large (max 5MB)' });
             }
-            // Save file
-            const ext = path.extname(part.filename);
+            const ext = path.extname(part.filename || '.bin');
             const savedName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
-            const filePath = path.join(UPLOAD_DIR, savedName);
-            fs.writeFileSync(filePath, part.content);
-            attachments.push({
-              name: part.filename,
-              url: `${BASE_URL}/uploads/${savedName}`,
-              size: part.content.length,
-            });
+            const cloudPath = `uploads/${savedName}`;
+
+            // Try CloudBase storage first, fallback to local
+            try {
+              const cloudbase = getCloudbase();
+              const result = await cloudbase.storage().uploadFile({
+                cloudPath,
+                fileContent: part.content
+              });
+              const urlResult = await cloudbase.storage().getTempFileURL({ fileList: [result.fileID] });
+              attachments.push({
+                name: part.filename,
+                url: urlResult.fileList[0]?.tempFileURL || `${BASE_URL}/uploads/${savedName}`,
+                size: part.content.length,
+              });
+            } catch (cloudErr) {
+              console.warn('CloudBase attachment upload failed, using local:', cloudErr.message);
+              const filePath = path.join(UPLOAD_DIR, savedName);
+              fs.writeFileSync(filePath, part.content);
+              attachments.push({
+                name: part.filename,
+                url: `${BASE_URL}/uploads/${savedName}`,
+                size: part.content.length,
+              });
+            }
           }
         }
 

@@ -939,7 +939,7 @@
 
     function renderBodyWithImages(text) {
       if (!text) return '';
-      // Step 1: Extract all markdown images and store them
+      // Step 1: Extract all markdown images and store them (BEFORE any HTML escaping)
       const imgMap = {};
       let imgIndex = 0;
       let result = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (full, alt, url) => {
@@ -949,22 +949,22 @@
         return key;
       });
 
-      // Step 2: Escape HTML in remaining text
-      result = escapeHtml(result);
-
-      // Step 3: Highlight dates
+      // Step 2: Highlight dates (before HTML escape)
       result = result.replace(/(\d+月\d+日)/g, '<span class="highlight-date">$1</span>');
       result = result.replace(/(\d{1,2}[./-]\d{1,2})/g, '<span class="highlight-date">$1</span>');
 
-      // Step 4: Highlight keywords
+      // Step 3: Highlight keywords
       const keywords = ['截止', '请于', '重要', '紧急', '务必', '必须', '报名', '申请', '提交', '完成', '@所有人'];
       for (const kw of keywords) {
         const regex = new RegExp(`(${kw})`, 'g');
         result = result.replace(regex, '<span class="highlight">$1</span>');
       }
 
-      // Step 5: Make URLs clickable (but not inside img src)
+      // Step 4: Make URLs clickable (before HTML escape)
       result = result.replace(/(https?:\/\/[^\s<）)>"]+)/g, '<a href="$1" target="_blank" class="highlight-link">$1</a>');
+
+      // Step 5: Escape HTML in text (now safe - images already extracted)
+      result = escapeHtml(result);
 
       // Step 6: Restore images as <img> tags
       for (const [key, { alt, url }] of Object.entries(imgMap)) {
