@@ -1666,7 +1666,8 @@ const server = http.createServer((req, res) => {
       res.end('Forbidden');
       return;
     }
-    const filePath = path.join(__dirname, url.pathname);
+    // url.pathname = /uploads/images/xxx.jpg -> filePath = DATA_DIR + /uploads/images/xxx.jpg = DATA_DIR/uploads/images/xxx.jpg
+    const filePath = path.join(DATA_DIR, url.pathname);
     // Ensure file is within uploads directory
     if (!filePath.startsWith(UPLOAD_DIR)) {
       res.writeHead(403);
