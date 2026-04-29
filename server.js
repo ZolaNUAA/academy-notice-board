@@ -13,6 +13,66 @@ const LOG_FILE = path.join(__dirname, 'data', 'operation.log');
 // e.g., https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com
 const BASE_URL = process.env.BASE_URL || 'https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com';
 
+// GitHub backup config
+const GITHUB_BRANCH = 'main';
+const GITHUB_DATA_PATH = 'data/notices.json';
+let lastBackupTime = 0;
+const BACKUP_DEBOUNCE_MS = 5000;
+
+function getDataFileContent() {
+  try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8')); } catch { return []; }
+}
+
+// Commit data to GitHub
+function commitToGitHub(message) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return;
+  const now = Date.now();
+  if (now - lastBackupTime < BACKUP_DEBOUNCE_MS) return;
+  lastBackupTime = now;
+
+  const https = require('https');
+  const data = getDataFileContent();
+  const content = Buffer.from(JSON.stringify(data, null, 2)).toString('base64');
+  const repo = 'ZolaNUAA/academy-notice-board';
+
+  const getSha = () => {
+    return new Promise((resolve) => {
+      const options = {
+        hostname: 'api.github.com',
+        path: `/repos/${repo}/contents/${GITHUB_DATA_PATH}?ref=${GITHUB_BRANCH}`,
+        method: 'GET',
+        headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Accept': 'application/vnd.github.v3+json' }
+      };
+      const req = https.request(options, (res) => {
+        let d = '';
+        res.on('data', c => d += c);
+        res.on('end', () => { try { resolve(JSON.parse(d).sha); } catch { resolve(null); } });
+      });
+      req.on('error', () => resolve(null));
+      req.end();
+    });
+  };
+
+  const updateFile = async (sha) => {
+    const body = { message: message || `backup: ${new Date().toISOString()}`, content, branch: GITHUB_BRANCH };
+    if (sha) body.sha = sha;
+    const postData = JSON.stringify(body);
+    const options = {
+      hostname: 'api.github.com',
+      path: `/repos/${repo}/contents/${GITHUB_DATA_PATH}`,
+      method: 'PUT',
+      headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+    };
+    const req = https.request(options, (res) => { res.on('data', () => {}); res.on('end', () => {}); });
+    req.on('error', () => {});
+    req.write(postData);
+    req.end();
+  };
+
+  getSha().then(updateFile);
+}
+
 // Ensure upload directory exists
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -647,6 +707,7 @@ function readNotices() {
 
 function writeNotices(notices) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(notices, null, 2), 'utf-8');
+  commitToGitHub('backup: auto-save notices data');
 }
 
 // ============ Auth Handlers ============
