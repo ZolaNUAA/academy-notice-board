@@ -4,11 +4,14 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data', 'notices.json');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const LOG_FILE = path.join(__dirname, 'data', 'operation.log');
+// When deployed on cloud, set BASE_URL to the public URL of the service
+// e.g., https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com
+const BASE_URL = process.env.BASE_URL || 'https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com';
 
 // Ensure upload directory exists
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -887,7 +890,7 @@ function handlePOST(req, res) {
             fs.writeFileSync(filePath, part.content);
             attachments.push({
               name: part.filename,
-              url: `/uploads/${savedName}`,
+              url: `${BASE_URL}/uploads/${savedName}`,
               size: part.content.length,
             });
           }
@@ -975,7 +978,7 @@ function handleImageUpload(req, res) {
           fs.writeFileSync(filePath, part.content);
 
           return sendJSON(res, 200, {
-            url: `/uploads/${savedName}`,
+            url: `${BASE_URL}/uploads/${savedName}`,
             name: part.filename || 'image.png'
           });
         }
