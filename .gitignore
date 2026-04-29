@@ -5,8 +5,11 @@ node_modules/
 uploads/
 
 # Data files (contains notices, operation logs, cloud uploads)
-# 注意：云端会自动备份数据到GitHub，本地commit时忽略，避免覆盖云端数据
+# 注意：云端会自动备份数据到GitHub
 data/
+
+# But track notices.json specifically
+!data/notices.json
 
 # Config file (contains passwords and secrets)
 config.json
