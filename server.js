@@ -21,6 +21,7 @@ const VERIFY_CODE = process.env.VERIFY_CODE || 'nuaa16';
 // GitHub backup config
 const GITHUB_BRANCH = 'main';
 const GITHUB_DATA_PATH = 'data/notices.json';
+const GITHUB_CONFIG_PATH = 'data/config.json';
 let lastBackupTime = 0;
 const BACKUP_DEBOUNCE_MS = 5000;
 
@@ -29,7 +30,7 @@ function getDataFileContent() {
 }
 
 // Commit data to GitHub
-function commitToGitHub(message) {
+function commitToGitHub(message, filePath, data) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) return;
   const now = Date.now();
@@ -37,15 +38,14 @@ function commitToGitHub(message) {
   lastBackupTime = now;
 
   const https = require('https');
-  const data = getDataFileContent();
   const content = Buffer.from(JSON.stringify(data, null, 2)).toString('base64');
   const repo = 'ZolaNUAA/academy-notice-board';
 
-  const getSha = () => {
+  const getSha = (path) => {
     return new Promise((resolve) => {
       const options = {
         hostname: 'api.github.com',
-        path: `/repos/${repo}/contents/${GITHUB_DATA_PATH}?ref=${GITHUB_BRANCH}`,
+        path: `/repos/${repo}/contents/${path}?ref=${GITHUB_BRANCH}`,
         method: 'GET',
         headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Accept': 'application/vnd.github.v3+json' }
       };
@@ -59,13 +59,13 @@ function commitToGitHub(message) {
     });
   };
 
-  const updateFile = async (sha) => {
+  const updateFile = async (sha, path) => {
     const body = { message: message || `backup: ${new Date().toISOString()}`, content, branch: GITHUB_BRANCH };
     if (sha) body.sha = sha;
     const postData = JSON.stringify(body);
     const options = {
       hostname: 'api.github.com',
-      path: `/repos/${repo}/contents/${GITHUB_DATA_PATH}`,
+      path: `/repos/${repo}/contents/${path}`,
       method: 'PUT',
       headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
     };
@@ -75,7 +75,21 @@ function commitToGitHub(message) {
     req.end();
   };
 
-  getSha().then(updateFile);
+  // Backup notices.json
+  getSha(filePath).then(sha => updateFile(sha, filePath));
+}
+
+// Backup notices.json
+function backupNotices() {
+  commitToGitHub('backup: auto-save notices data', GITHUB_DATA_PATH, getDataFileContent());
+}
+
+// Backup config.json
+function backupConfig() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+    commitToGitHub('backup: auto-save config', GITHUB_CONFIG_PATH, cfg);
+  } catch (e) {}
 }
 
 // Ensure upload directory exists
@@ -147,6 +161,7 @@ function loadConfig() {
 
 function saveConfig(config) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  backupConfig();
 }
 
 function hashPassword(password) {
@@ -194,6 +209,80 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 if (!fs.existsSync(DATA_FILE)) {
   fs.writeFileSync(DATA_FILE, '[]', 'utf-8');
 }
+
+// ============ Restore data from GitHub on startup ============
+async function restoreFromGitHub() {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.log('[Restore] 未配置 GITHUB_TOKEN，跳过从GitHub恢复');
+    return;
+  }
+
+  const repo = 'ZolaNUAA/academy-notice-board';
+
+  const getFileContent = (path) => {
+    return new Promise((resolve) => {
+      const options = {
+        hostname: 'api.github.com',
+        path: `/repos/${repo}/contents/${path}?ref=${GITHUB_BRANCH}`,
+        method: 'GET',
+        headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Accept': 'application/vnd.github.v3+json' }
+      };
+      const req = https.request(options, (res) => {
+        let d = '';
+        res.on('data', c => d += c);
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(d);
+            if (data.content) {
+              const content = Buffer.from(data.content, 'base64').toString('utf-8');
+              resolve(JSON.parse(content));
+            } else {
+              resolve(null);
+            }
+          } catch {
+            resolve(null);
+          }
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.end();
+    });
+  };
+
+  try {
+    // Restore notices.json
+    const notices = await getFileContent(GITHUB_DATA_PATH);
+    if (notices && Array.isArray(notices) && notices.length > 0) {
+      const localNotices = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+      if (localNotices.length === 0 || notices.length > localNotices.length) {
+        fs.writeFileSync(DATA_FILE, JSON.stringify(notices, null, 2), 'utf-8');
+        console.log(`[Restore] 从GitHub恢复 ${notices.length} 条通知到 data/notices.json`);
+      } else {
+        console.log(`[Restore] 本地已有 ${localNotices.length} 条通知，跳过notices恢复`);
+      }
+    } else {
+      console.log('[Restore] GitHub上未找到notices备份数据');
+    }
+
+    // Restore config.json
+    const cfg = await getFileContent(GITHUB_CONFIG_PATH);
+    if (cfg && cfg.admins) {
+      const localConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      if (!localConfig.admins || Object.keys(localConfig.admins).length < Object.keys(cfg.admins).length) {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
+        console.log('[Restore] 从GitHub恢复config.json');
+      } else {
+        console.log('[Restore] 本地config已存在，跳过恢复');
+      }
+    }
+  } catch (e) {
+    console.log('[Restore] 从GitHub恢复失败:', e.message);
+  }
+}
+
+// 启动时尝试从GitHub恢复数据（非阻塞）
+setTimeout(restoreFromGitHub, 1000);
 
 // ============ Parser (same logic as frontend) ============
 const CATEGORY_RULES = [
@@ -712,7 +801,7 @@ function readNotices() {
 
 function writeNotices(notices) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(notices, null, 2), 'utf-8');
-  commitToGitHub('backup: auto-save notices data');
+  backupNotices();
 }
 
 // ============ Auth Handlers ============
