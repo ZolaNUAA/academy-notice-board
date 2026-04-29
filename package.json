@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@cloudbase/node-sdk": "^3.18.1",
-    "@cloudbase/storage": "^2.28.1"
+    "@cloudbase/storage": "^2.28.1",
+    "cos-nodejs-sdk-v5": "^2.15.4"
   }
 }

@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
-const { CloudBase } = require('@cloudbase/node-sdk');
+const storage = require('./lib/storage');
 
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data', 'notices.json');
@@ -13,20 +13,6 @@ const LOG_FILE = path.join(__dirname, 'data', 'operation.log');
 // When deployed on cloud, set BASE_URL to the public URL of the service
 // e.g., https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com
 const BASE_URL = process.env.BASE_URL || 'https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com';
-
-// CloudBase storage init (lazy, to avoid init error in local dev)
-let cloudbaseInstance = null;
-function getCloudbase() {
-  if (!cloudbaseInstance) {
-    cloudbaseInstance = new CloudBase({
-      envId: process.env.TCB_ENV_ID || process.env.NEXT_PUBLIC_TCB_ENV_ID,
-      secretId: process.env.TENCENTCLOUD_SECRETID,
-      secretKey: process.env.TENCENTCLOUD_SECRETKEY,
-      sessionToken: process.env.TENCENTCLOUD_SESSIONTOKEN
-    });
-  }
-  return cloudbaseInstance;
-}
 
 // GitHub backup config
 const GITHUB_BRANCH = 'main';
@@ -962,30 +948,8 @@ function handlePOST(req, res) {
             const ext = path.extname(part.filename || '.bin');
             const savedName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
             const cloudPath = `uploads/${savedName}`;
-
-            // Try CloudBase storage first, fallback to local
-            try {
-              const cloudbase = getCloudbase();
-              const result = await cloudbase.storage().uploadFile({
-                cloudPath,
-                fileContent: part.content
-              });
-              const urlResult = await cloudbase.storage().getTempFileURL({ fileList: [result.fileID] });
-              attachments.push({
-                name: part.filename,
-                url: urlResult.fileList[0]?.tempFileURL || `${BASE_URL}/uploads/${savedName}`,
-                size: part.content.length,
-              });
-            } catch (cloudErr) {
-              console.warn('CloudBase attachment upload failed, using local:', cloudErr.message);
-              const filePath = path.join(UPLOAD_DIR, savedName);
-              fs.writeFileSync(filePath, part.content);
-              attachments.push({
-                name: part.filename,
-                url: `${BASE_URL}/uploads/${savedName}`,
-                size: part.content.length,
-              });
-            }
+            const result = await storage.uploadFile(part.content, cloudPath, part.filename);
+            attachments.push({ name: result.name, url: result.url, size: result.size });
           }
         }
 
@@ -1068,30 +1032,8 @@ function handleImageUpload(req, res) {
 
           const savedName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
           const cloudPath = `uploads/${savedName}`;
-
-          // Try CloudBase storage first, fallback to local
-          try {
-            const cloudbase = getCloudbase();
-            const result = await cloudbase.storage().uploadFile({
-              cloudPath,
-              fileContent: part.content
-            });
-            // Get temp URL for download
-            const urlResult = await cloudbase.storage().getTempFileURL({ fileList: [result.fileID] });
-            return sendJSON(res, 200, {
-              url: urlResult.fileList[0]?.tempFileURL || `${BASE_URL}/uploads/${savedName}`,
-              name: part.filename || 'image.png'
-            });
-          } catch (cloudErr) {
-            console.warn('CloudBase upload failed, using local storage:', cloudErr.message);
-            // Fallback to local storage
-            const filePath = path.join(UPLOAD_DIR, savedName);
-            fs.writeFileSync(filePath, part.content);
-            return sendJSON(res, 200, {
-              url: `${BASE_URL}/uploads/${savedName}`,
-              name: part.filename || 'image.png'
-            });
-          }
+          const result = await storage.uploadFile(part.content, cloudPath, part.filename || 'image.png');
+          return sendJSON(res, 200, { url: result.url, name: result.name });
         }
       }
       return sendJSON(res, 400, { error: 'no image found' });
