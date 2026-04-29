@@ -1,14 +1,12 @@
-appid: your-appid
-services:
-  website:
-    type: static
-    build:
-      dockerFile: Dockerfile
-      entrypoint: npm start
-  server:
-    type: node
-    envVariables:
-      NODE_ENV: production
-    scaling:
-      minInstance: 1
-      maxInstance: 1
+{
+  "envId": "acde-d6gaea0xq5a36d486-1259025170",
+  "$schema": "https://raw.githubusercontent.com/TencentCloudBase/cloudbase-framework/master/schema/cloudbaserc.json",
+  "version": "2.0",
+  "cliHosting": {
+    "cloudPath": "/board",
+    "output": "."
+  },
+  "envVariables": {
+    "NODE_ENV": "production"
+  }
+}

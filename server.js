@@ -6,10 +6,11 @@ const os = require('os');
 const storage = require('./lib/storage');
 
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, 'data', 'notices.json');
+const DATA_DIR = path.join(__dirname, 'data');
+const DATA_FILE = path.join(DATA_DIR, 'notices.json');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
-const LOG_FILE = path.join(__dirname, 'data', 'operation.log');
+const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+const LOG_FILE = path.join(DATA_DIR, 'operation.log');
 // When deployed on cloud, set BASE_URL to the public URL of the service
 // e.g., https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com
 const BASE_URL = process.env.BASE_URL || 'https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com';
@@ -945,10 +946,7 @@ function handlePOST(req, res) {
             if (part.content.length > maxFileSize) {
               return sendJSON(res, 400, { error: 'Attachment too large (max 5MB)' });
             }
-            const ext = path.extname(part.filename || '.bin');
-            const savedName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
-            const cloudPath = `uploads/${savedName}`;
-            const result = await storage.uploadFile(part.content, cloudPath, part.filename);
+            const result = await storage.uploadAttachment(part.content, part.filename);
             attachments.push({ name: result.name, url: result.url, size: result.size });
           }
         }
@@ -1030,9 +1028,7 @@ function handleImageUpload(req, res) {
             return sendJSON(res, 400, { error: 'Only image files allowed' });
           }
 
-          const savedName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
-          const cloudPath = `uploads/${savedName}`;
-          const result = await storage.uploadFile(part.content, cloudPath, part.filename || 'image.png');
+          const result = await storage.uploadImage(part.content, part.filename || 'image.png');
           return sendJSON(res, 200, { url: result.url, name: result.name });
         }
       }
@@ -1417,14 +1413,13 @@ const server = http.createServer((req, res) => {
 
   // Serve uploaded files
   if (url.pathname.startsWith('/uploads/')) {
-    const filename = url.pathname.replace('/uploads/', '');
     // Path traversal protection
-    if (filename.includes('..') || filename.includes('/') || path.isAbsolute(filename)) {
+    if (url.pathname.includes('..')) {
       res.writeHead(403);
       res.end('Forbidden');
       return;
     }
-    const filePath = path.join(UPLOAD_DIR, filename);
+    const filePath = path.join(__dirname, url.pathname);
     // Ensure file is within uploads directory
     if (!filePath.startsWith(UPLOAD_DIR)) {
       res.writeHead(403);
@@ -1432,8 +1427,8 @@ const server = http.createServer((req, res) => {
       return;
     }
     if (fs.existsSync(filePath)) {
-      const extMap = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.pdf': 'application/pdf' };
-      const ext = path.extname(filename).toLowerCase();
+      const extMap = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.pdf': 'application/pdf', '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.document', '.ppt': 'application/vnd.ms-powerpoint', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.zip': 'application/zip', '.rar': 'application/x-rar-compressed', '.7z': 'application/x-7z-compressed', '.txt': 'text/plain' };
+      const ext = path.extname(filePath).toLowerCase();
       res.writeHead(200, { 'Content-Type': extMap[ext] || 'application/octet-stream' });
       res.end(fs.readFileSync(filePath));
     } else {
