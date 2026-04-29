@@ -15,6 +15,9 @@ const LOG_FILE = path.join(DATA_DIR, 'operation.log');
 // e.g., https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com
 const BASE_URL = process.env.BASE_URL || 'https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com';
 
+// 访问验证码（可配置到环境变量）
+const VERIFY_CODE = process.env.VERIFY_CODE || 'nuaa16';
+
 // GitHub backup config
 const GITHUB_BRANCH = 'main';
 const GITHUB_DATA_PATH = 'data/notices.json';
@@ -736,6 +739,21 @@ async function handleLogin(req, res) {
     }
   } catch(e) {
     sendJSON(res, 500, { error: 'Login error' });
+  }
+}
+
+// ============ Verify Code ============
+async function handleVerify(req, res) {
+  try {
+    const { code } = await parseJSONBody(req);
+    if (!code) return sendJSON(res, 400, { error: 'code required' });
+    if (code === VERIFY_CODE) {
+      sendJSON(res, 200, { success: true });
+    } else {
+      sendJSON(res, 401, { error: '验证码错误' });
+    }
+  } catch(e) {
+    sendJSON(res, 500, { error: 'Verify error' });
   }
 }
 
@@ -1501,9 +1519,14 @@ const server = http.createServer((req, res) => {
     if (req.method === 'POST') return handlePOST(req, res);
   }
 
-  // Login: verify password
+// Login: verify password
   if (url.pathname === '/api/login') {
     if (req.method === 'POST') return handleLogin(req, res);
+  }
+
+// Verify access code
+  if (url.pathname === '/api/verify') {
+    if (req.method === 'POST') return handleVerify(req, res);
   }
 
   // Change password

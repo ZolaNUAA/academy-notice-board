@@ -279,6 +279,24 @@
       50% { opacity: 1; transform: scale(1.1); }
       100% { opacity: 0; transform: scale(1); }
     }
+    .verify-screen {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .verify-box {
+      background: #fff;
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      text-align: center;
+      max-width: 400px;
+      width: 90%;
+    }
+    .verify-box h1 { margin: 0 0 8px 0; font-size: 24px; color: #1f2937; }
+    .verify-box p { margin: 0 0 8px 0; color: #6b7280; }
     .login-success-toast {
       position: fixed;
       top: 50%;
@@ -726,6 +744,7 @@
     // ============ State ============
     const state = {
       page: 'main',
+      verified: false, // 是否已通过验证码
       viewMode: 'sticky',
       isAdmin: false,
       adminUsername: '',
@@ -1119,6 +1138,22 @@
     // ============ Render ============
     function render() {
       const root = document.getElementById('app');
+
+      // 未验证，显示验证码输入界面
+      if (!state.verified) {
+        root.innerHTML = `
+          <div class="verify-screen">
+            <div class="verify-box">
+              <h1>🏫 学院通知便利贴看板</h1>
+              <p>请输入访问验证码</p>
+              <input type="password" id="verifyCodeInput" placeholder="输入验证码" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin:16px 0;font-size:16px" onkeydown="if(event.key==='Enter')handleVerify()">
+              <button type="button" class="btn btn-primary" style="width:100%;padding:12px;font-size:16px" onclick="handleVerify()">验证</button>
+              <p style="margin-top:16px;font-size:12px;color:#888">管理员入口：输入管理员密码直接登录</p>
+            </div>
+          </div>
+        `;
+        return;
+      }
 
       const filtered = getFiltered();
       const active = filtered.filter(n => !n.expired);
@@ -2078,7 +2113,7 @@ window.handleLogin = async function() {
             render();
             setTimeout(() => { state.loginSuccess = false; render(); }, 1500);
           }, 300);
-        } else {
+} else {
           btn.innerHTML = '登录';
           btn.disabled = false;
           alert(data.error || '密码错误');
@@ -2090,7 +2125,48 @@ window.handleLogin = async function() {
       }
     };
 
+    // 验证码验证
+    window.handleVerify = async function() {
+      const code = document.getElementById('verifyCodeInput').value;
+      if (!code) { alert('请输入验证码'); return; }
+
+      // 先尝试作为管理员密码登录
+      const loginRes = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: code })
+      });
+      const loginData = await loginRes.json();
+
+      if (loginRes.ok && loginData.success) {
+        // 输入的是管理员密码，直接登录
+        state.verified = true;
+        state.isAdmin = true;
+        state.adminUsername = loginData.username || '';
+        state.adminRole = loginData.role || 'admin';
+        state.viewMode = 'sticky';
+        render();
+        return;
+      }
+
+      // 验证码验证
+      const verifyRes = await fetch('/api/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      const verifyData = await verifyRes.json();
+
+      verifyRes.ok && verifyData.success) {
+        state.verified = true;
+        render();
+      } else {
+        alert(verifyData.error || '验证码错误');
+      }
+    };
+
     window.handleLogout = function() {
+      state.verified = false;
       state.isAdmin = false;
       state.adminUsername = '';
       state.adminRole = '';
