@@ -1488,7 +1488,13 @@ function handleStats(req, res) {
     todayNotices: todayCount,
     totalNotices: notices.length,
     version: cachedVersion ? cachedVersion.version : (process.env.DEPLOY_VERSION || 'local'),
-    versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || new Date().toISOString())
+    versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || new Date().toISOString()),
+    indexHtmlTime: (() => {
+      try {
+        const stat = fs.statSync(path.join(__dirname, 'index.html'));
+        return stat.mtime.toISOString();
+      } catch { return null; }
+    })()
   });
 }
 

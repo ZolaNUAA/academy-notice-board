@@ -1168,7 +1168,10 @@
                 <h1>🏫 学院通知便利贴看板</h1>
                 <p>${state.isAdmin ? (state.adminRole === 'root' ? '👑 超级管理员' : '⚡ 管理员') + ' · ' + state.adminUsername + ' · ' : '欢迎访问 · '}已收录 ${state.notices.length} 条通知</p>
               </div>
-              ${state.stats?.version ? `<div style="font-size:11px;color:#888;text-align:right;line-height:1.4">v${state.stats.version}<br>${state.stats.versionDate ? new Date(state.stats.versionDate).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : ''}</div>` : ''}
+              ${state.stats?.version ? `<div style="font-size:11px;color:#888;text-align:right;line-height:1.5">
+                <span style="color:#666">v${state.stats.version}</span>
+                ${state.stats.indexHtmlTime ? `<br><span style="color:#aaa">页面更新: ${new Date(state.stats.indexHtmlTime).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>` : ''}
+              </div>` : ''}
             </div>
             <div class="header-actions">
               <button type="button" class="btn btn-secondary btn-sm" onclick="toggleDarkMode()" title="切换深色模式">${state.darkMode ? '☀️' : '🌙'}</button>
