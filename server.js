@@ -1134,6 +1134,58 @@ function handleWebhookConfig(req, res) {
   }).catch(e => sendJSON(res, 500, { error: 'Error: ' + e.message }));
 }
 
+// Fetch latest commit info from GitHub
+const GITHUB_REPO = 'ZolaNUAA/academy-notice-board';
+let cachedVersion = null;
+
+function getCloudbaseHost() {
+  // Detect if running on Tencent Cloudbase
+  const host = process.env.TCB_REGION || '';
+  if (host.includes('gz')) return 'gz.tencentcloudapi.com';
+  if (host.includes('bj')) return 'bj.tencentcloudapi.com';
+  return 'ap-guangzhou.tencentcloudapi.com';
+}
+
+function fetchLatestCommit() {
+  const token = process.env.GITHUB_TOKEN || '';
+  if (!token || cachedVersion) return;
+
+  const https = require('https');
+  const url = new URL(`https://api.github.com/repos/${GITHUB_REPO}/commits?per_page=1`);
+
+  const options = {
+    hostname: url.hostname,
+    path: url.pathname,
+    method: 'GET',
+    headers: {
+      'User-Agent': 'AcademyNoticeBoard/1.0',
+      'Authorization': `token ${token}`,
+      'Accept': 'application/json'
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    let data = '';
+    res.on('data', chunk => data += chunk);
+    res.on('end', () => {
+      try {
+        const commits = JSON.parse(data);
+        if (commits && commits[0]) {
+          cachedVersion = {
+            version: commits[0].sha.substring(0, 7),
+            date: commits[0].commit.author.date
+          };
+        }
+      } catch(e) { console.error('GitHub API error:', e.message); }
+    });
+  });
+  req.on('error', () => {});
+  req.end();
+}
+
+// Start fetching in background (non-blocking)
+setTimeout(fetchLatestCommit, 100);
+
 function handleStats(req, res) {
   // Increment visit counter
   config.visits++;
@@ -1154,6 +1206,8 @@ function handleStats(req, res) {
     lastVisit: config.lastVisit,
     todayNotices: todayCount,
     totalNotices: notices.length,
+    version: cachedVersion ? cachedVersion.version : (process.env.DEPLOY_VERSION || 'local'),
+    versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || new Date().toISOString())
   });
 }
 
