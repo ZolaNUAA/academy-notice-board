@@ -26,7 +26,8 @@ jobs:
         run: npm install -g @cloudbase/cli
 
       - name: Deploy to CloudBase
-        run: tcb framework deploy -e "$TCB_ENV_ID"
+        run: |
+          npx cloudbase-framework deploy -e "$TCB_ENV_ID"
         env:
           TCB_ENV_ID: ${{ secrets.TCB_ENV_ID }}
           TENCENTCLOUD_SECRETID: ${{ secrets.TENCENTCLOUD_SECRETID }}
