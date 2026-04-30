@@ -34,6 +34,5 @@ jobs:
             cd /home/ubuntu/academy-notice-board
             git pull origin main
             npm install --production
-            export DEPLOY_VERSION="${GITHUB_SHA:0:7}"
-            export DEPLOY_DATE="$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
-            pm2 restart academy-notice-board --update-env || pm2 start server.js --name academy-notice-board
+            pm2 delete academy-notice-board 2>/dev/null
+            DEPLOY_VERSION="${GITHUB_SHA:0:7}" DEPLOY_DATE="$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')" pm2 start ecosystem.config.js --update-env
