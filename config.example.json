@@ -1,17 +1,20 @@
 {
   "admins": {
     "admin": {
+      "role": "admin",
+      "hash": "SET_YOUR_PASSWORD_HASH_HERE"
+    },
+    "root": {
       "role": "root",
-      "hash": "salt$hash"
+      "hash": "SET_YOUR_PASSWORD_HASH_HERE"
     }
   },
   "version": 1,
   "visits": 0,
   "lastVisit": null,
-  "webhookSecret": null,
   "limits": {
     "maxBodySize": 2097152,
-    "maxFileSize": 20242880,
+    "maxFileSize": 5242880,
     "requestTimeout": 30000,
     "maxLogSize": 10485760,
     "pageLimit": 30
