@@ -1313,10 +1313,13 @@ async function convertCloudURLs(notices) {
   const fileIDMap = new Map(); // fileID -> 原始字段路径
 
   notices.forEach((notice, noticeIdx) => {
-    // 处理附件
+    // 处理附件（兼容cloud://和fileID两种格式）
     if (notice.attachments) {
       notice.attachments.forEach((att, attIdx) => {
-        if (att.url && att.url.startsWith('cloud://')) {
+        if (att.fileID) {
+          fileIDList.push(att.fileID);
+          fileIDMap.set(att.fileID, { type: 'attachment', noticeIdx, attIdx });
+        } else if (att.url && att.url.startsWith('cloud://')) {
           fileIDList.push(att.url);
           fileIDMap.set(att.url, { type: 'attachment', noticeIdx, attIdx });
         }
@@ -1503,7 +1506,9 @@ function handlePOST(req, res) {
             }
             const result = await storage.uploadAttachment(part.content, part.filename);
             // Store both original name (for display) and saved name (for URL)
-            attachments.push({ name: part.filename, savedName: result.name, url: result.url, size: result.size });
+            const att = { name: part.filename, savedName: result.name, url: result.url, size: result.size };
+            if (result.fileID) att.fileID = result.fileID;
+            attachments.push(att);
           }
         }
         console.log('[DEBUG] Final attachments array:', attachments);
