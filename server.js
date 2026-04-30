@@ -1337,12 +1337,17 @@ async function convertCloudURLs(notices) {
 
   // 批量获取临时URL（最多50个）
   try {
-    const cloudbase = new (require('@cloudbase/node-sdk'))({
+    const cloudbaseOptions = {
       envId: process.env.TCB_ENV_ID || process.env.NEXT_PUBLIC_TCB_ENV_ID,
-      secretId: process.env.TENCENTCLOUD_SECRETID || process.env.COS_SECRET_ID,
-      secretKey: process.env.TENCENTCLOUD_SECRETKEY || process.env.COS_SECRET_KEY,
-      sessionToken: process.env.TENCENTCLOUD_SESSIONTOKEN
-    });
+    };
+    const _secretId = process.env.TENCENTCLOUD_SECRETID || process.env.COS_SECRET_ID;
+    const _secretKey = process.env.TENCENTCLOUD_SECRETKEY || process.env.COS_SECRET_KEY;
+    if (_secretId) cloudbaseOptions.secretId = _secretId;
+    if (_secretKey) cloudbaseOptions.secretKey = _secretKey;
+    if (process.env.TENCENTCLOUD_SESSIONTOKEN) {
+      cloudbaseOptions.sessionToken = process.env.TENCENTCLOUD_SESSIONTOKEN;
+    }
+    const cloudbase = new (require('@cloudbase/node-sdk'))(cloudbaseOptions);
 
     const urlResult = await cloudbase.storage().getTempFileURL({ fileList: fileIDList });
     if (urlResult.fileList) {
