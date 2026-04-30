@@ -28,8 +28,12 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: |
+            GITHUB_SHA,GITHUB_RUN_NUMBER,GITHUB_REF_NAME
           script: |
             cd /home/ubuntu/academy-notice-board
             git pull origin main
             npm install --production
-            pm2 restart academy-notice-board || pm2 start server.js --name academy-notice-board
+            export DEPLOY_VERSION="${GITHUB_SHA:0:7}"
+            export DEPLOY_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            pm2 restart academy-notice-board --update-env || pm2 start server.js --name academy-notice-board

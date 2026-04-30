@@ -1768,6 +1768,12 @@ function getCloudbaseHost() {
   return 'ap-guangzhou.tencentcloudapi.com';
 }
 
+function getGitShortHash() {
+  try {
+    return require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, encoding: 'utf-8' }).trim();
+  } catch { return 'local'; }
+}
+
 function fetchLatestCommit() {
   const token = process.env.GITHUB_TOKEN || '';
   if (!token || cachedVersion) return;
@@ -1828,7 +1834,7 @@ function handleStats(req, res) {
     lastVisit: config.lastVisit,
     todayNotices: todayCount,
     totalNotices: notices.length,
-    version: cachedVersion ? cachedVersion.version : (process.env.DEPLOY_VERSION || 'local'),
+    version: cachedVersion ? cachedVersion.version : (process.env.DEPLOY_VERSION || getGitShortHash()),
     versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || new Date().toISOString()),
     indexHtmlTime: (() => {
       try {
