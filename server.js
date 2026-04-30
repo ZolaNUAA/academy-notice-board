@@ -6,9 +6,25 @@ const os = require('os');
 const storage = require('./lib/storage');
 
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = path.join(__dirname, 'data');
+// 检测/mnt是否可用（存在且可写）
+const BASE_DIR = process.env.STORAGE_MNT || '/mnt';
+let USE_MNT = false;
+try {
+  USE_MNT = fs.existsSync(BASE_DIR) && fs.statSync(BASE_DIR).isDirectory();
+  if (USE_MNT) {
+    // 测试写入权限
+    const testFile = path.join(BASE_DIR, '.write_test');
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+  }
+} catch (e) {
+  USE_MNT = false;
+  console.warn('[Server] /mnt not writable, using local storage');
+}
+
+const DATA_DIR = USE_MNT ? path.join(BASE_DIR, 'data') : path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'notices.json');
-const CONFIG_FILE = path.join(__dirname, 'config.json');
+const CONFIG_FILE = USE_MNT ? path.join(BASE_DIR, 'config.json') : path.join(__dirname, 'config.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const LOG_FILE = path.join(DATA_DIR, 'operation.log');
 // When deployed on cloud, set BASE_URL to the public URL of the service
@@ -348,8 +364,12 @@ async function backupAllUploads() {
 }
 
 // Ensure upload directory exists
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn(`[Server] Failed to create upload directory: ${e.message}`);
 }
 
 // ============ Operation Log ============
@@ -2072,5 +2092,7 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`\n🏫 学院通知看板已启动`);
   console.log(`   访问地址: http://localhost:${PORT}`);
+  console.log(`   存储模式: ${USE_MNT ? '/mnt (COS挂载)' : '本地文件系统'}`);
+  console.log(`   数据目录: ${DATA_DIR}`);
   console.log(`   按 Ctrl+C 停止服务器\n`);
 });
