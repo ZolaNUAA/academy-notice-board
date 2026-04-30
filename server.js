@@ -1302,7 +1302,71 @@ function parseJSONBody(req) {
   });
 }
 
-function handleGET(req, res) {
+// 将cloud://格式的fileID转换为临时签名URL
+async function convertCloudURLs(notices) {
+  // 检查是否在CloudBase环境
+  const isCloudBase = !!(process.env.TCB_ENV_ID || process.env.TENCENTCLOUD_RUNENV);
+  if (!isCloudBase) return notices;
+
+  // 收集所有需要转换的cloud:// URL
+  const fileIDList = [];
+  const fileIDMap = new Map(); // fileID -> 原始字段路径
+
+  notices.forEach((notice, noticeIdx) => {
+    // 处理附件
+    if (notice.attachments) {
+      notice.attachments.forEach((att, attIdx) => {
+        if (att.url && att.url.startsWith('cloud://')) {
+          fileIDList.push(att.url);
+          fileIDMap.set(att.url, { type: 'attachment', noticeIdx, attIdx });
+        }
+      });
+    }
+    // 处理正文中的图片链接
+    if (notice.links) {
+      notice.links.forEach((link, linkIdx) => {
+        if (link && link.startsWith && link.startsWith('cloud://')) {
+          fileIDList.push(link);
+          fileIDMap.set(link, { type: 'link', noticeIdx, linkIdx });
+        }
+      });
+    }
+  });
+
+  if (fileIDList.length === 0) return notices;
+
+  // 批量获取临时URL（最多50个）
+  try {
+    const cloudbase = new (require('@cloudbase/node-sdk'))({
+      envId: process.env.TCB_ENV_ID || process.env.NEXT_PUBLIC_TCB_ENV_ID,
+      secretId: process.env.TENCENTCLOUD_SECRETID || process.env.COS_SECRET_ID,
+      secretKey: process.env.TENCENTCLOUD_SECRETKEY || process.env.COS_SECRET_KEY,
+      sessionToken: process.env.TENCENTCLOUD_SESSIONTOKEN
+    });
+
+    const urlResult = await cloudbase.storage().getTempFileURL({ fileList: fileIDList });
+    if (urlResult.fileList) {
+      urlResult.fileList.forEach((item, idx) => {
+        if (item.tempFileURL) {
+          const mapping = fileIDMap.get(fileIDList[idx]);
+          if (mapping) {
+            if (mapping.type === 'attachment') {
+              notices[mapping.noticeIdx].attachments[mapping.attIdx].url = item.tempFileURL;
+            } else if (mapping.type === 'link') {
+              notices[mapping.noticeIdx].links[mapping.linkIdx] = item.tempFileURL;
+            }
+          }
+        }
+      });
+    }
+  } catch (e) {
+    console.error('[Server] Failed to convert cloud URLs:', e.message);
+  }
+
+  return notices;
+}
+
+async function handleGET(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   let notices = readNotices();
 
@@ -1338,7 +1402,10 @@ function handleGET(req, res) {
   const total = notices.length;
   const totalPages = Math.ceil(total / limit);
   const startIndex = (page - 1) * limit;
-  const paginatedNotices = notices.slice(startIndex, startIndex + limit);
+  let paginatedNotices = notices.slice(startIndex, startIndex + limit);
+
+  // 将cloud:// URL转换为临时签名URL
+  paginatedNotices = await convertCloudURLs(paginatedNotices);
 
   sendJSON(res, 200, {
     notices: paginatedNotices,
