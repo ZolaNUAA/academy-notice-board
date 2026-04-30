@@ -35,5 +35,5 @@ jobs:
             git pull origin main
             npm install --production
             export DEPLOY_VERSION="${GITHUB_SHA:0:7}"
-            export DEPLOY_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            export DEPLOY_DATE="$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
             pm2 restart academy-notice-board --update-env || pm2 start server.js --name academy-notice-board
