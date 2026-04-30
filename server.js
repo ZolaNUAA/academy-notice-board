@@ -1124,7 +1124,7 @@ function parseNoticeBlock(block, idx) {
     }
   }
 
-  const { pub, ddl } = parseDates(body, fallback);
+  const { ddl } = parseDates(body, fallback);
   const cat = inferCategory(`${title}\n${body}`);
   const imp = inferImportance(`${title}\n${body}`);
   const owner = parseOwner(body);
@@ -1137,7 +1137,7 @@ function parseNoticeBlock(block, idx) {
     type: cat.name,
     typeClass: `cat-${cat.key}`,
     title, body,
-    publishDate: pub ? toISO(pub) : toISO(now),
+    publishDate: toISO(now), // 发布时间始终为粘贴时的当天日期
     deadline: ddl ? toISO(ddl) : null,
     importance: imp,
     owner, links, expired,
