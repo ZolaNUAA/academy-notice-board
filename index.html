@@ -206,6 +206,9 @@
     .note-attachments { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
     .attachment-link { font-size: 13px; color: #059669; text-decoration: none; background: #d1fae5; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .attachment-link:hover { background: #a7f3d0; text-decoration: underline; }
+    .attachment-tag { display: inline-flex; align-items: center; gap: 2px; margin: 2px 4px 2px 0; }
+    .attachment-remove { cursor: pointer; color: #999; font-size: 14px; padding: 0 4px; line-height: 1; }
+    .attachment-remove:hover { color: #e74c3c; }
 
     .note-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(0,0,0,0.1); }
     .note-date-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
@@ -263,15 +266,15 @@
       background: #fff;
       border-radius: 20px;
       padding: 28px;
-      max-width: 720px;
+      max-width: 820px;
       width: 100%;
-      max-height: 88vh;
+      max-height: 90vh;
       overflow-y: auto;
       box-shadow: 0 25px 70px rgba(0,0,0,0.25);
     }
     .modal h2 { margin-bottom: 6px; font-size: 20px; }
     .modal p { color: #888; font-size: 13px; margin-bottom: 16px; }
-    .modal textarea {
+    .modal textarea { width: 100%; padding: 10px; border: 1px solid #e0e0e0; border-radius: 10px; font-size: 13px; font-family: inherit; resize: vertical; box-sizing: border-box; }
 
     /* Login Success Animation */
     @keyframes loginSuccess {
@@ -675,7 +678,8 @@
     .edit-links {
       margin-top: 8px;
     }
-    .edit-links label {
+    .edit-links label,
+    .edit-attachments label {
       display: block;
       font-size: 11px;
       color: #888;
@@ -1361,17 +1365,44 @@
                     </select>
                   </div>
                   <div class="form-group">
+                    <label>发布时间</label>
+                    <input type="date" id="editPublishDate" value="${state.editingNotice.publishDate||''}">
+                  </div>
+                  <div class="form-group">
                     <label>截止日期</label>
                     <input type="date" id="editDeadline" value="${state.editingNotice.deadline||''}">
                   </div>
                 </div>
-                <div class="form-group">
-                  <label>负责人</label>
-                  <input type="text" id="editOwner" value="${escapeHtml(state.editingNotice.owner)}">
+                <div class="form-row">
+                  <div class="form-group" style="flex:2">
+                    <label>负责人</label>
+                    <input type="text" id="editOwner" value="${escapeHtml(state.editingNotice.owner)}">
+                  </div>
                 </div>
+                ${state.editingNotice.links && state.editingNotice.links.length > 0 ? `
+                  <div class="form-group">
+                    <label>链接</label>
+                    <div class="edit-links">
+                      ${state.editingNotice.links.map(l => `<a href="${l}" target="_blank" class="preview-link">🔗 ${escapeHtml(l)}</a>`).join('')}
+                    </div>
+                  </div>
+                ` : ''}
+                ${state.editingNotice.attachments && state.editingNotice.attachments.length > 0 ? `
+                  <div class="form-group">
+                    <label>附件</label>
+                    <div class="edit-attachments" id="editAttachments">
+                      ${state.editingNotice.attachments.map((a, i) => {
+                        const ext = (a.name || '').split('.').pop() || '';
+                        const iconMap = { pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️', zip: '📦', rar: '📦', '7z': '📦', txt: '📃', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️' };
+                        const icon = iconMap[ext.toLowerCase()] || '📎';
+                        return `<span class="attachment-tag"><a href="${a.url}" target="_blank" class="attachment-link">${icon} ${escapeHtml(a.name || '文件')}</a><span class="attachment-remove" onclick="removeEditAttachment(${i})">✕</span></span>`;
+                      }).join('')}
+                    </div>
+                  </div>
+                ` : ''}
                 <div class="form-group">
                   <label>正文</label>
-                  <textarea id="editBody">${escapeHtml(state.editingNotice.body)}</textarea>
+                  <textarea id="editBody" rows="6">${escapeHtml(state.editingNotice.body)}</textarea>
                 </div>
               </div>
               <div class="modal-actions">
@@ -2347,13 +2378,38 @@ window.handleLogin = async function() {
         title: document.getElementById('editTitle').value,
         type: document.getElementById('editType').value,
         importance: +document.getElementById('editImportance').value,
+        publishDate: document.getElementById('editPublishDate').value || null,
         deadline: document.getElementById('editDeadline').value || null,
         owner: document.getElementById('editOwner').value,
         body: document.getElementById('editBody').value,
       };
+      // 如果有附件删除操作，同步更新
+      if (state._removedAttachmentIndices) {
+        const remaining = state.editingNotice.attachments.filter((_, i) => !state._removedAttachmentIndices.has(i));
+        if (remaining.length > 0) updates.attachments = remaining;
+        else updates.attachments = [];
+        delete state._removedAttachmentIndices;
+      }
       await updateNotice(id, updates);
       state.showEditModal = false;
       state.editingNotice = null;
+    };
+
+    window.removeEditAttachment = function(idx) {
+      if (!confirm('确定删除此附件？')) return;
+      if (!state._removedAttachmentIndices) state._removedAttachmentIndices = new Set();
+      state._removedAttachmentIndices.add(idx);
+      // 重新渲染附件列表
+      const container = document.getElementById('editAttachments');
+      if (container) {
+        const remaining = state.editingNotice.attachments.filter((_, i) => !state._removedAttachmentIndices.has(i));
+        container.innerHTML = remaining.map((a, i) => {
+          const ext = (a.name || '').split('.').pop() || '';
+          const iconMap = { pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️', zip: '📦', rar: '📦', '7z': '📦', txt: '📃', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️' };
+          const icon = iconMap[ext.toLowerCase()] || '📎';
+          return `<span class="attachment-tag"><a href="${a.url}" target="_blank" class="attachment-link">${icon} ${escapeHtml(a.name || '文件')}</a><span class="attachment-remove" onclick="removeEditAttachment(${i})">✕</span></span>`;
+        }).join('');
+      }
     };
 
     // ============ Init ============
