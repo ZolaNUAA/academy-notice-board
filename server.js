@@ -436,7 +436,7 @@ function loadConfig() {
 
 function saveConfig(config) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
-  backupConfig();
+  // GitHub backup disabled - data stored in Tencent Cloud COS
 }
 
 function hashPassword(password) {
@@ -584,8 +584,7 @@ async function restoreFromGitHub() {
   }
 }
 
-// 启动时尝试从GitHub恢复数据（非阻塞）
-setTimeout(restoreFromGitHub, 1000);
+// 启动时不再从GitHub恢复数据 - 数据存储在腾讯云COS
 
 // ============ Parser (same logic as frontend) ============
 const CATEGORY_RULES = [
@@ -1158,7 +1157,7 @@ function readNotices() {
 
 function writeNotices(notices) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(notices, null, 2), 'utf-8');
-  backupNotices();
+  // GitHub backup disabled - data stored in Tencent Cloud COS
 }
 
 // ============ Auth Handlers ============
@@ -1641,143 +1640,15 @@ async function handleLimits(req, res) {
   }
 }
 
-// ============ Backup Version Management (root only) ============
+// ============ Backup Version Management (DISABLED) ============
 
-// Get list of backup versions from GitHub
+// GitHub备份已禁用 - 数据存储在腾讯云COS
 async function handleBackupVersions(req, res) {
-  try {
-    const { password } = req.method === 'GET' ? {} : await parseJSONBody(req);
-    const admin = password ? checkAdminPassword(password) : null;
-    if (!admin || admin.role !== 'root') {
-      return sendJSON(res, 401, { error: '需要超级管理员密码' });
-    }
-
-    const token = process.env.GITHUB_TOKEN;
-    if (!token) {
-      return sendJSON(res, 503, { error: 'GITHUB_TOKEN 未配置' });
-    }
-
-    const https = require('https');
-    const repo = 'ZolaNUAA/academy-notice-board';
-
-    const getVersions = () => {
-      return new Promise((resolve) => {
-        const options = {
-          hostname: 'api.github.com',
-          path: `/repos/${repo}/commits?path=${GITHUB_DATA_PATH}&per_page=20`,
-          method: 'GET',
-          headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Accept': 'application/vnd.github.v3+json' }
-        };
-        const req = https.request(options, (res) => {
-          let d = '';
-          res.on('data', c => d += c);
-          res.on('end', () => {
-            try {
-              const commits = JSON.parse(d);
-              const versions = commits.map(c => ({
-                sha: c.sha,
-                message: c.commit.message,
-                date: c.commit.author.date,
-                author: c.commit.author.name
-              }));
-              resolve(versions);
-            } catch {
-              resolve([]);
-            }
-          });
-        });
-        req.on('error', () => resolve([]));
-        req.end();
-      });
-    };
-
-    const versions = await getVersions();
-    sendJSON(res, 200, { versions });
-  } catch(e) {
-    sendJSON(res, 500, { error: '获取版本列表失败: ' + e.message });
-  }
+  return sendJSON(res, 200, { versions: [], message: 'GitHub备份已禁用，数据存储在腾讯云COS' });
 }
 
-// Restore notices from a specific GitHub commit
 async function handleBackupRestore(req, res) {
-  try {
-    const { password, sha } = await parseJSONBody(req);
-    const admin = checkAdminPassword(password);
-    if (!admin || admin.role !== 'root') {
-      return sendJSON(res, 401, { error: '需要超级管理员密码' });
-    }
-
-    if (!sha) {
-      return sendJSON(res, 400, { error: '缺少 sha 参数' });
-    }
-
-    const token = process.env.GITHUB_TOKEN;
-    if (!token) {
-      logGitOp('RESTORE_VERSION', sha, 'FAILED', { reason: 'GITHUB_TOKEN not configured' });
-      return sendJSON(res, 503, { error: 'GITHUB_TOKEN 未配置' });
-    }
-
-    const https = require('https');
-    const repo = 'ZolaNUAA/academy-notice-board';
-
-    const getFileAtCommit = () => {
-      return new Promise((resolve) => {
-        const options = {
-          hostname: 'api.github.com',
-          path: `/repos/${repo}/contents/${GITHUB_DATA_PATH}?ref=${sha}`,
-          method: 'GET',
-          headers: { 'Authorization': `token ${token}`, 'User-Agent': 'AcademyNoticeBoard/1.0', 'Accept': 'application/vnd.github.v3+json' }
-        };
-        const req = https.request(options, (res) => {
-          let d = '';
-          let statusCode = res.statusCode;
-          res.on('data', c => d += c);
-          res.on('end', () => {
-            try {
-              const data = JSON.parse(d);
-              if (data.content) {
-                const content = Buffer.from(data.content, 'base64').toString('utf-8');
-                logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'SUCCESS', { size: `${(data.size || 0) / 1024}KB` });
-                resolve(JSON.parse(content));
-              } else if (statusCode === 404) {
-                logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'FAILED', { reason: 'File not found at commit' });
-                resolve(null);
-              } else {
-                logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'FAILED', { statusCode, error: data.message });
-                resolve(null);
-              }
-            } catch (e) {
-              logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'FAILED', { error: 'Parse error: ' + e.message });
-              resolve(null);
-            }
-          });
-        });
-        req.on('error', (e) => {
-          logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'FAILED', { error: 'Network error: ' + e.message });
-          resolve(null);
-        });
-        req.end();
-      });
-    };
-
-    logGitOp('RESTORE_VERSION', `notices@${sha.substring(0, 7)}`, 'STARTING', { admin: admin.username });
-
-    const notices = await getFileAtCommit();
-    if (!notices || !Array.isArray(notices)) {
-      return sendJSON(res, 404, { error: '未找到该版本的备份数据' });
-    }
-
-    // Save to local file
-    writeNotices(notices);
-
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-    logOperation('BACKUP_RESTORE', { admin: admin.username, sha: sha.substring(0, 7), ip, count: notices.length });
-
-    sendJSON(res, 200, { success: true, message: `已恢复到版本 ${sha.substring(0, 7)}，共 ${notices.length} 条通知`, count: notices.length });
-  } catch(e) {
-    logGitOp('RESTORE_VERSION', 'unknown', 'FAILED', { error: e.message });
-    sendJSON(res, 500, { error: '恢复失败: ' + e.message });
-  }
+  return sendJSON(res, 200, { success: false, message: 'GitHub备份已禁用，数据存储在腾讯云COS' });
 }
 
 // Webhook config: get/set webhook secret
