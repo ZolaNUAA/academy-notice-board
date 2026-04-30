@@ -1929,15 +1929,16 @@ const server = http.createServer((req, res) => {
   }
 
   // Serve uploaded files
-  if (url.pathname.startsWith('/uploads/')) {
+  if (url.pathname.startsWith('/data/uploads/')) {
     // Path traversal protection
     if (url.pathname.includes('..')) {
       res.writeHead(403);
       res.end('Forbidden');
       return;
     }
-    // url.pathname = /uploads/images/xxx.jpg -> filePath = DATA_DIR + /uploads/images/xxx.jpg = DATA_DIR/uploads/images/xxx.jpg
-    const filePath = path.join(DATA_DIR, url.pathname);
+    // url.pathname = /data/uploads/images/xxx.jpg -> filePath = DATA_DIR + /uploads/images/xxx.jpg = DATA_DIR/uploads/images/xxx.jpg
+    const uploadPath = url.pathname.replace('/data', '');
+    const filePath = path.join(DATA_DIR, uploadPath);
     // Ensure file is within uploads directory
     if (!filePath.startsWith(UPLOAD_DIR)) {
       res.writeHead(403);
