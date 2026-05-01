@@ -1297,13 +1297,23 @@ function parseNoticeBlock(block, idx) {
   const now = new Date();
   const expired = ddl ? ddl < now : false;
 
+  // 无截止日期时自动推测：根据重要性给7-30天
+  let finalDdl = ddl;
+  if (!finalDdl) {
+    const days = imp === 3 ? 7 : imp === 2 ? 14 : 30;
+    const inferred = new Date(now);
+    inferred.setDate(inferred.getDate() + days);
+    inferred.setHours(23, 59, 59, 0);
+    finalDdl = inferred;
+  }
+
   return {
     id: `n-${idx}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
     type: cat.name,
     typeClass: `cat-${cat.key}`,
     title, body,
     publishDate: toISO(now), // 发布时间始终为粘贴时的当天日期
-    deadline: ddl ? toISO(ddl) : null,
+    deadline: toISO(finalDdl),
     importance: imp,
     owner, location, links, keyPoints, expired,
   };

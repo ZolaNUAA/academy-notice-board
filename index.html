@@ -1952,14 +1952,14 @@
 
     function getDDLCountdown(deadline, expired) {
       if (!deadline) return null;
-      if (expired) return { text: '已过期', cls: 'chip-ddl-expired', ico: '🕐' };
+      if (expired) return { text: '已过期', cls: 'chip-ddl-expired', ico: '⌛' };
       const days = Math.ceil((new Date(deadline) - new Date()) / 86400000);
-      if (days <= 0) return { text: '今天截止', cls: 'chip-ddl-urgent', ico: '🔥' };
-      if (days === 1) return { text: '明天截止', cls: 'chip-ddl-urgent', ico: '⏰' };
-      if (days <= 3) return { text: `${days}天后截止`, cls: 'chip-ddl-urgent', ico: '⏰' };
-      if (days <= 7) return { text: `${days}天后截止`, cls: 'chip-ddl-soon', ico: '⏰' };
-      if (days <= 30) return { text: `${Math.ceil(days/7)}周后截止`, cls: 'chip-ddl-normal', ico: '📅' };
-      return { text: formatDate(deadline), cls: 'chip-ddl-normal', ico: '📅' };
+      if (days <= 0) return { text: '今天截止', cls: 'chip-ddl-urgent', ico: '🔴' };
+      if (days === 1) return { text: '明天截止', cls: 'chip-ddl-urgent', ico: '🔴' };
+      if (days <= 3) return { text: `${days}天后截止`, cls: 'chip-ddl-urgent', ico: '🟠' };
+      if (days <= 7) return { text: `${days}天后`, cls: 'chip-ddl-soon', ico: '🟡' };
+      if (days <= 30) return { text: `${Math.ceil(days/7)}周后`, cls: 'chip-ddl-normal', ico: '🕐' };
+      return { text: formatDate(deadline), cls: 'chip-ddl-normal', ico: '🕐' };
     }
 
     function getKeyPointIcon(line) {
