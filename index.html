@@ -168,9 +168,20 @@
       font-weight: 700;
       padding: 3px 10px;
       border-radius: 999px;
-      background: rgba(255,255,255,0.8);
-      border: 1px solid rgba(0,0,0,0.15);
+      white-space: nowrap;
     }
+    .note-badge.type-research { background: #fef3c7; color: #92400e; }
+    .note-badge.type-teaching { background: #ffedd5; color: #9a3412; }
+    .note-badge.type-postgrad { background: #dbeafe; color: #1e40af; }
+    .note-badge.type-student { background: #dcfce7; color: #166534; }
+    .note-badge.type-party { background: #fee2e2; color: #991b1b; }
+    .note-badge.type-personnel { background: #fae8ff; color: #86198f; }
+    .note-badge.type-confidential { background: #fecaca; color: #7f1d1d; }
+    .note-badge.type-state-assets { background: #ede9fe; color: #5b21b6; }
+    .note-badge.type-safety { background: #fef9c3; color: #854d0e; }
+    .note-badge.type-international { background: #cffafe; color: #155e75; }
+    .note-badge.type-admin { background: #e5e7eb; color: #374151; }
+    .note-badge.type-other { background: #f3f4f6; color: #6b7280; }
     .note-stars { font-size: 13px; letter-spacing: 1px; }
     .star-high { color: #dc2626; }
     .star-medium { color: #d97706; }
@@ -178,12 +189,39 @@
 
     .note-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; line-height: 1.4; color: #1a1a1a; }
 
+    /* Info chips row */
+    .info-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .info-chip {
+      font-size: 11px; padding: 2px 8px; border-radius: 4px;
+      display: inline-flex; align-items: center; gap: 3px;
+      white-space: nowrap; font-weight: 500;
+    }
+    .info-chip.chip-ddl-urgent { background: #fef2f2; color: #dc2626; animation: chipPulse 2s ease-in-out infinite; }
+    .info-chip.chip-ddl-soon { background: #fffbeb; color: #d97706; }
+    .info-chip.chip-ddl-normal { background: #f0fdf4; color: #166534; }
+    .info-chip.chip-ddl-expired { background: #f3f4f6; color: #9ca3af; }
+    .info-chip.chip-location { background: #eff6ff; color: #1d4ed8; }
+    .info-chip.chip-owner { background: #fdf4ff; color: #86198f; }
+    .info-chip.chip-urgent { background: #fef2f2; color: #dc2626; font-weight: 700; }
+    @keyframes chipPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
     .note-meta { font-size: 12px; color: #666; margin-bottom: 3px; display: flex; align-items: center; gap: 4px; }
     .note-ddl { font-size: 12px; font-weight: 600; margin-bottom: 6px; padding: 4px 8px; border-radius: 4px; display: inline-block; }
     .ddl-urgent { background: #fee2e2; color: #dc2626; }
     .ddl-soon { background: #fef3c7; color: #d97706; }
     .ddl-normal { background: #f3f4f6; color: #6b7280; }
     .ddl-expired { background: #f3f4f6; color: #9ca3af; text-decoration: line-through; }
+
+    /* Urgency top banner */
+    .urgency-strip {
+      position: absolute; top: -1px; left: 4px; right: 4px; height: 4px;
+      border-radius: 4px 4px 0 0;
+    }
+    .urgency-strip.level-urgent { background: linear-gradient(90deg, #dc2626, #f87171); }
+    .urgency-strip.level-soon { background: linear-gradient(90deg, #d97706, #fbbf24); }
 
     /* Highlighted content */
     .note-content {
@@ -712,6 +750,39 @@
     body.dark-mode .tab.active { background: #3b82f6; color: #fff; }
     body.dark-mode .sticky-note { background: #2d2d44 !important; color: #e0e0e0; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
     body.dark-mode .sticky-note.expired { opacity: 0.6; }
+    body.dark-mode .note-badge.type-research { background: #3d3520; color: #fbbf24; }
+    body.dark-mode .note-badge.type-teaching { background: #3d2e1a; color: #fb923c; }
+    body.dark-mode .note-badge.type-postgrad { background: #1a2940; color: #7ca3f5; }
+    body.dark-mode .note-badge.type-student { background: #1a3020; color: #5ced73; }
+    body.dark-mode .note-badge.type-party { background: #3d1a1a; color: #fca5a5; }
+    body.dark-mode .note-badge.type-personnel { background: #301a30; color: #d8b4fe; }
+    body.dark-mode .note-badge.type-confidential { background: #3d1a1a; color: #f87171; }
+    body.dark-mode .note-badge.type-state-assets { background: #251a35; color: #a78bfa; }
+    body.dark-mode .note-badge.type-safety { background: #3d3520; color: #facc15; }
+    body.dark-mode .note-badge.type-international { background: #1a2530; color: #67e8f9; }
+    body.dark-mode .note-badge.type-admin { background: #2d2d44; color: #9ca3af; }
+    body.dark-mode .note-badge.type-other { background: #2d2d44; color: #9ca3af; }
+    body.dark-mode .info-chip.chip-ddl-urgent { background: #3d1a1a; color: #fca5a5; }
+    body.dark-mode .info-chip.chip-ddl-soon { background: #3d3520; color: #fbbf24; }
+    body.dark-mode .info-chip.chip-ddl-normal { background: #1a3020; color: #6ee7b7; }
+    body.dark-mode .info-chip.chip-ddl-expired { background: #2d2d44; color: #6b7280; }
+    body.dark-mode .info-chip.chip-location { background: #1a2540; color: #7ca3f5; }
+    body.dark-mode .info-chip.chip-owner { background: #251a35; color: #c084fc; }
+    body.dark-mode .info-chip.chip-urgent { background: #3d1a1a; color: #fca5a5; }
+    body.dark-mode .urgency-strip.level-urgent { opacity: 0.8; }
+    body.dark-mode .urgency-strip.level-soon { opacity: 0.8; }
+    body.dark-mode .cat-research { background: linear-gradient(145deg, #2a2518, #252010) !important; border-left-color: #f59e0b; }
+    body.dark-mode .cat-teaching { background: linear-gradient(145deg, #2a2018, #251d10) !important; border-left-color: #f97316; }
+    body.dark-mode .cat-postgrad { background: linear-gradient(145deg, #1a1f2a, #151a25) !important; border-left-color: #3b82f6; }
+    body.dark-mode .cat-student { background: linear-gradient(145deg, #182018, #151d15) !important; border-left-color: #22c55e; }
+    body.dark-mode .cat-party { background: linear-gradient(145deg, #2a1515, #251010) !important; border-left-color: #dc2626; }
+    body.dark-mode .cat-personnel { background: linear-gradient(145deg, #251820, #20151d) !important; border-left-color: #c026d3; }
+    body.dark-mode .cat-confidential { background: linear-gradient(145deg, #2a1515, #251010) !important; border-left-color: #ef4444; }
+    body.dark-mode .cat-state-assets { background: linear-gradient(145deg, #1d1828, #181525) !important; border-left-color: #8b5cf6; }
+    body.dark-mode .cat-safety { background: linear-gradient(145deg, #2a2518, #252010) !important; border-left-color: #eab308; }
+    body.dark-mode .cat-international { background: linear-gradient(145deg, #151f25, #101a20) !important; border-left-color: #06b6d4; }
+    body.dark-mode .cat-admin { background: linear-gradient(145deg, #222233, #1d1d2e) !important; border-left-color: #6b7280; }
+    body.dark-mode .cat-other { background: linear-gradient(145deg, #252535, #202030) !important; border-left-color: #6b7280; }
     body.dark-mode .note-title { color: #e0e0e0; }
     body.dark-mode .note-content { color: #b0b0b0; }
     body.dark-mode .note-meta { color: #888; }
@@ -1879,30 +1950,72 @@
       }
     };
 
+    function getDDLCountdown(deadline, expired) {
+      if (!deadline) return null;
+      if (expired) return { text: '已过期', cls: 'chip-ddl-expired', ico: '🕐' };
+      const days = Math.ceil((new Date(deadline) - new Date()) / 86400000);
+      if (days <= 0) return { text: '今天截止', cls: 'chip-ddl-urgent', ico: '🔥' };
+      if (days === 1) return { text: '明天截止', cls: 'chip-ddl-urgent', ico: '⏰' };
+      if (days <= 3) return { text: `${days}天后截止`, cls: 'chip-ddl-urgent', ico: '⏰' };
+      if (days <= 7) return { text: `${days}天后截止`, cls: 'chip-ddl-soon', ico: '⏰' };
+      if (days <= 30) return { text: `${Math.ceil(days/7)}周后截止`, cls: 'chip-ddl-normal', ico: '📅' };
+      return { text: formatDate(deadline), cls: 'chip-ddl-normal', ico: '📅' };
+    }
+
+    function getKeyPointIcon(line) {
+      if (/截止|日期|前|前完成|前提交/.test(line)) return '⏰';
+      if (/邮箱|\w+@\w+/.test(line)) return '📧';
+      if (/电话|\d{7,}/.test(line)) return '📞';
+      if (/地点|位置|在.*楼|在.*室|在.*厅/.test(line)) return '📍';
+      if (/提交|报送|发送|发至|交至/.test(line)) return '📤';
+      if (/申请|报名|注册|登记/.test(line)) return '📝';
+      if (/要求|必须|务必|严禁/.test(line)) return '⚠️';
+      return '•';
+    }
+
+    function getTypeBadgeClass(type) {
+      const map = { '科研':'research','教学':'teaching','研究生':'postgrad','学工':'student',
+        '党务':'party','人事':'personnel','保密':'confidential','国资':'state-assets',
+        '安全':'safety','国合':'international','全院':'admin','其他':'other' };
+      return `type-${map[type] || 'other'}`;
+    }
+
     function renderStickyNote(n) {
       const keyPoints = n.keyPoints && n.keyPoints.length > 0 ? n.keyPoints : extractKeyPoints(n.body);
       const catClass = getCatClass(n.type);
       const ddlClass = getDDLClass(n.deadline, n.expired);
       const ddlText = getDDLText(n.deadline, n.expired);
+      const cddl = getDDLCountdown(n.deadline, n.expired);
+      const badgeClass = getTypeBadgeClass(n.type);
+      const urgency = !n.deadline ? '' : n.expired ? '' :
+        (() => { const days = Math.ceil((new Date(n.deadline) - new Date())/86400000);
+          return days <= 1 ? 'level-urgent' : days <= 3 ? 'level-soon' : ''; })();
+
+      // Info chips
+      let chips = '';
+      if (cddl) chips += `<span class="info-chip ${cddl.cls}">${cddl.ico} ${cddl.text}</span>`;
+      if (n.location) chips += `<span class="info-chip chip-location">📍 ${escapeHtml(n.location)}</span>`;
+      if (n.owner && n.owner !== '未指定') chips += `<span class="info-chip chip-owner">👤 ${escapeHtml(n.owner)}</span>`;
+      if (n.importance === 3 && urgency) chips += `<span class="info-chip chip-urgent">⚠️ 高优先级</span>`;
 
       return `
         <div class="sticky-note ${catClass} ${n.expired?'expired':''}">
+          ${urgency ? `<div class="urgency-strip ${urgency}"></div>` : ''}
           <div class="pin"></div>
           <div class="note-top">
-            <span class="note-badge">${n.type}</span>
+            <span class="note-badge ${badgeClass}">${n.type}</span>
             <span class="note-stars ${n.importance===3?'star-high':n.importance===2?'star-medium':'star-low'}">${renderStars(n.importance)}</span>
           </div>
           <h3 class="note-title">${escapeHtml(n.title)}</h3>
           <div class="note-date-row">
             <span class="note-meta">📅 ${formatDate(n.publishDate)}</span>
-            ${n.deadline ? `<span class="note-ddl ${ddlClass}">⏰ ${ddlText}</span>` : ''}
-            ${n.location ? `<span class="note-meta">📍 ${escapeHtml(n.location)}</span>` : ''}
           </div>
+          ${chips ? `<div class="info-chips">${chips}</div>` : ''}
           ${keyPoints.length > 0 ? `
             <div class="key-points">
               <div class="key-points-title">📋 关键信息</div>
               <ul>
-                ${keyPoints.map(p => `<li>${highlightContent(escapeHtml(p))}</li>`).join('')}
+                ${keyPoints.map(p => `<li>${getKeyPointIcon(p)} ${highlightContent(escapeHtml(p))}</li>`).join('')}
               </ul>
             </div>
           ` : ''}
@@ -1923,7 +2036,7 @@
             </div>
           ` : ''}
           <div class="note-footer">
-            <span class="note-owner">👤 ${n.owner}</span>
+            ${n.owner && n.owner !== '未指定' ? `<span class="note-owner">👤 ${n.owner}</span>` : '<span></span>'}
             ${state.isAdmin ? `
               <div>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="handleEdit('${n.id}')">编辑</button>
