@@ -1161,26 +1161,104 @@ function writeNotices(notices) {
 }
 
 // ============ Auth Handlers ============
+// ============ 登录频率限制 ============
+const loginAttempts = new Map();
+const LOGIN_MAX_ATTEMPTS = 5;        // 最多失败5次
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;  // 10分钟窗口
+const LOGIN_BAN_MS = 30 * 60 * 1000;     // 封30分钟
+
+function checkLoginRateLimit(ip) {
+  const now = Date.now();
+  const record = loginAttempts.get(ip);
+
+  if (!record) {
+    loginAttempts.set(ip, { count: 0, firstFail: now, banUntil: 0 });
+    return { allowed: true };
+  }
+
+  // 检查是否在封禁中
+  if (record.banUntil > now) {
+    return { allowed: false, remaining: Math.ceil((record.banUntil - now) / 1000 / 60) };
+  }
+
+  // 如果窗口过期，重置
+  if (now - record.firstFail > LOGIN_WINDOW_MS) {
+    record.count = 0;
+    record.firstFail = now;
+  }
+
+  return { allowed: true };
+}
+
+function recordLoginFail(ip) {
+  const now = Date.now();
+  let record = loginAttempts.get(ip);
+  if (!record) {
+    record = { count: 0, firstFail: now, banUntil: 0 };
+    loginAttempts.set(ip, record);
+  }
+
+  record.count++;
+
+  // 如果窗口过期，重置
+  if (now - record.firstFail > LOGIN_WINDOW_MS) {
+    record.count = 1;
+    record.firstFail = now;
+  }
+
+  // 超过阈值则封禁
+  if (record.count >= LOGIN_MAX_ATTEMPTS) {
+    record.banUntil = now + LOGIN_BAN_MS;
+    console.log(`[Security] IP ${ip} banned for ${LOGIN_BAN_MS/1000/60} min (${record.count} failed attempts)`);
+  }
+}
+
+function recordLoginSuccess(ip) {
+  loginAttempts.delete(ip);
+}
+
+// 每30分钟清理过期记录
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of loginAttempts) {
+    if (record.banUntil < now && now - record.firstFail > LOGIN_WINDOW_MS * 2) {
+      loginAttempts.delete(ip);
+    }
+  }
+}, 30 * 60 * 1000);
+
 async function handleLogin(req, res) {
   try {
     const { password } = await parseJSONBody(req);
     if (!password) return sendJSON(res, 400, { error: 'password required' });
 
-    const admin = checkAdminPassword(password);
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    const ipRaw = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    const ip = ipRaw.replace('::ffff:', '').split(',')[0].trim();
     const ua = req.headers['user-agent'] || '';
 
+    // 检查频率限制
+    const rateCheck = checkLoginRateLimit(ip);
+    if (!rateCheck.allowed) {
+      logOperation('LOGIN_BANNED', { ip, remaining: rateCheck.remaining, userAgent: ua });
+      return sendJSON(res, 429, { error: `登录尝试过于频繁，请 ${rateCheck.remaining} 分钟后再试` });
+    }
+
+    const admin = checkAdminPassword(password);
+
     if (admin) {
+      recordLoginSuccess(ip);
       logOperation('LOGIN', {
         username: admin.username,
         role: admin.role,
-        ip: ip.replace('::ffff:', ''),
+        ip: ip,
         userAgent: ua
       });
       sendJSON(res, 200, { success: true, username: admin.username, role: admin.role });
     } else {
+      recordLoginFail(ip);
       logOperation('LOGIN_FAILED', { password: password.substring(0, 4) + '***', ip, userAgent: ua });
-      sendJSON(res, 401, { error: '密码错误' });
+      // 增加延迟防止时序攻击
+      setTimeout(() => sendJSON(res, 401, { error: '密码错误' }), 500 + Math.random() * 500);
     }
   } catch(e) {
     sendJSON(res, 500, { error: 'Login error' });
