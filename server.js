@@ -695,7 +695,6 @@ function inferCategory(text) {
 
 // Enhanced importance inference
 function inferImportance(text) {
-  const lowerText = text.toLowerCase();
   // Check high importance first
   for (const kw of IMPORTANCE_KWS.high) {
     if (text.includes(kw)) return 3;
@@ -731,23 +730,40 @@ function parseRelativeDate(text) {
     }
   }
 
-  // Parse day of week like "下周一", "下周二"
-  const weekdayNames = ['周日','周一','周二','周三','周四','周五','周六'];
+  // Parse day of week like "下周一", "下周二", "本周一" etc.
+  // Uses Chinese week (Mon=0, Tue=1, ..., Sun=6) for correct week boundary
   const weekdayLower = ['周日','周一','周二','周三','周四','周五','周六'];
 
-  // "下周一" etc
+  // "下周一" etc — fixed: 之前公式对所有情况都+7，导致大部分情况多算一周
   const nextWeekMatch = text.match(/下周([日一二三四五六])/);
   if (nextWeekMatch) {
     const targetDay = weekdayLower.indexOf('周' + nextWeekMatch[1]);
     if (targetDay !== -1) {
       const d = new Date(today);
-      const diff = (7 - d.getDay() + targetDay) % 7 + 7;
+      const todayJsDow = d.getDay();           // JS: 0=Sun, 1=Mon
+      const targetJsDow = targetDay;           // same scale
+
+      // Days until the very next occurrence of targetDay (0-6)
+      let diff = targetJsDow - todayJsDow;
+      if (diff < 0) diff += 7;
+
+      // "下周X" = the X that falls in the NEXT calendar week (Chinese: week starts Mon)
+      // If the next occurrence is already in next week, don't add 7.
+      const todayChinaDow = todayJsDow === 0 ? 6 : todayJsDow - 1;   // 0=Mon
+      const targetChinaDow = targetJsDow === 0 ? 6 : targetJsDow - 1;
+      if (diff === 0) {
+        diff = 7;                           // today is target → next week +7
+      } else if (targetChinaDow > todayChinaDow) {
+        diff += 7;                          // next occurrence is this week → skip to next
+      }
+      // else: next occurrence is already next week → diff is correct as-is
+
       d.setDate(d.getDate() + diff);
       return d;
     }
   }
 
-  // "本周一" etc
+  // "本周一" etc — note: always gives future occurrence within 7 days
   const thisWeekMatch = text.match(/本周([日一二三四五六])/);
   if (thisWeekMatch) {
     const targetDay = weekdayLower.indexOf('周' + thisWeekMatch[1]);
@@ -858,6 +874,7 @@ function parseDates(text, fallback) {
   });
 
   // Format: mm月dd日
+  // 只有附近有截止关键词时才归为 deadline；否则归为发布日期候选
   [...text.matchAll(/(\d{1,2})月(\d{1,2})日/g)].forEach(m => {
     try {
       let hours = 23, minutes = 59;
@@ -865,7 +882,16 @@ function parseDates(text, fallback) {
       if (time) { hours = time.hours; minutes = time.minutes; }
       const d = new Date(year, parseInt(m[1], 10) - 1, parseInt(m[2], 10), hours, minutes, 59);
       if (!isNaN(d.getTime())) {
-        ddlCandidates.push(d);
+        // 检查该日期前后30字符内是否有截止关键词
+        const idx = m.index;
+        const contextBefore = text.substring(Math.max(0, idx - 30), idx);
+        const contextAfter = text.substring(idx, Math.min(text.length, idx + m[0].length + 30));
+        const nearDeadlineKws = /截止|截至|deadline|申报截止|报名截止|提交截止|材料截止|请于|务必于|必须于|下班前/;
+        if (hasDeadlineKeyword || nearDeadlineKws.test(contextBefore + contextAfter)) {
+          ddlCandidates.push(d);
+        } else {
+          pubCandidates.push(d);
+        }
       }
     } catch(e) {}
   });
@@ -921,22 +947,35 @@ function parseDates(text, fallback) {
 
 // Enhanced owner parsing
 function parseOwner(text) {
-  // Pattern: 负责人/联系人/对接人：张三
-  const patterns = [
-    /(?:负责人|联系人|对接人|经办人|审批人|发件人|报送人|报告人)\s*[:：]\s*([^\n，。,；;]+)/,
-    /(?:负责人|联系人|对接人|经办人|审批人|发件人|报送人|报告人)[:：]\s*([^\n，。,；;]+)/,
-    /负责人\s+(\S{2,})/,
-    /联系人\s+(\S{2,})/,
-  ];
+  // Blacklist: 不应该被识别为联系人的常见短语
+  const OWNER_BLACKLIST = new Set([
+    '谢谢大家','谢谢各位','谢谢配合','谢谢支持','谢谢合作',
+    '准时参加','提前入场','提前到场','请勿迟到',
+    '请回复','收到请回复','敬请周知','相互转告',
+    '截止日期','截止时间','报名截止','申报截止',
+    '提交方式','提交要求','具体要求','注意事项',
+    '欢迎参加','敬请光临','欢迎报名','欢迎踊跃',
+    '请查收','请注意','请关注','请留意',
+    '尽快完成','及时完成','按时完成',
+    '特此通知','特此公告',
+    '以上信息','以上通知','以上内容',
+    '没有报名','无需报名',
+  ]);
 
-  for (const pattern of patterns) {
-    const m = text.match(pattern);
-    if (m) {
-      let name = m[1].trim();
-      // Clean trailing punctuation
-      name = name.replace(/[，。,；;.。]+$/, '');
-      if (name.length >= 2) return name;
-    }
+  // Pattern: 负责人/联系人/对接人：张三
+  const contactPattern = /(?:负责人|联系人|对接人|经办人|审批人|发件人|报送人|报告人)\s*[:：]\s*([^\n，。,；;]+)/;
+
+  const m = text.match(contactPattern);
+  if (m) {
+    let name = m[1].trim();
+    name = name.replace(/[，。,；;.。]+$/, '');
+    if (name.length >= 2 && name.length <= 20 && !OWNER_BLACKLIST.has(name)) return name;
+  }
+
+  // 检查负责人/联系人 独立行（无冒号分隔）
+  const standaloneMatch = text.match(/(?:负责人|联系人)\s+(\S{2,10})/);
+  if (standaloneMatch && !OWNER_BLACKLIST.has(standaloneMatch[1].trim())) {
+    return standaloneMatch[1].trim();
   }
 
   // Email pattern
@@ -944,22 +983,25 @@ function parseOwner(text) {
   if (email) return `邮箱 ${email[1]}`;
 
   // Phone number pattern (various formats)
-  const phone = text.match(/(?:电话|手机|联系方式|联系电话)[:：]?\s*(\d{3,4}[-－]?\d{7,8}|\d{11})/);
-  if (phone) return `电话 ${phone[1]}`;
+  const phone = text.match(/(?:电话|手机|联系方式|联系电话)[:：]?\s*(\d{3,4}[-－]?\d{7,8}|\d{11}|\d{3}[-－]\d{4}[-－]\d{4}|\(\d{3,4}\)\s*\d{7,8})/);
+  if (phone) {
+    const num = phone[1].replace(/[\(\)\s]/g, '');
+    return `电话 ${num}`;
+  }
 
   // WeChat/Tech team contact
   const wx = text.match(/(?:微信|企微|钉钉|飞书)[:：]?\s*(\S+)/);
-  if (wx) return wx[1];
+  if (wx && wx[1].length < 30) return wx[1];
 
-  // Signature line at end (2-4 Chinese chars)
+  // Signature line at end (2-4 Chinese chars) — 加黑名单过滤
   const signMatch = text.match(/\n([\u4e00-\u9fa5]{2,4})\s*$/m);
-  if (signMatch) return signMatch[1];
+  if (signMatch && !OWNER_BLACKLIST.has(signMatch[1])) return signMatch[1];
 
   // Last line with name-like pattern
   const lines = text.split('\n').filter(l => l.trim());
   if (lines.length > 0) {
     const lastLine = lines[lines.length - 1].trim();
-    if (/^[\u4e00-\u9fa5]{2,4}$/.test(lastLine)) return lastLine;
+    if (/^[\u4e00-\u9fa5]{2,4}$/.test(lastLine) && !OWNER_BLACKLIST.has(lastLine)) return lastLine;
   }
 
   return '未指定';
@@ -970,22 +1012,17 @@ function extractLinks(text) {
   const links = new Set();
 
   // Standard URLs - stop at closing brackets/parentheses (including Chinese)
-  const urlPatterns = [
-    /https?:\/\/[^\s\uFF08\u2018\u2019\u300C<>"'\\（）\)\]\uff09\]]+/gi,
-    /http:\/\/[^\s\uFF08\u2018\u2019\u300C<>"'\\（）\)\]\uff09\]]+/gi,
-  ];
+  const urlPattern = /https?:\/\/[^\s\uFF08\u2018\u2019\u300C<>"'\\（）\)\]\uff09\]]+/gi;
 
-  for (const pattern of urlPatterns) {
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      // Clean trailing punctuation (including Chinese brackets)
-      let url = match[0].replace(/[。，,.。;；)>\]\uff09\]]+$/, '');
-      // Validate URL
-      try {
-        new URL(url.startsWith('http') ? url : 'http://' + url);
-        links.add(url);
-      } catch(e) {}
-    }
+  let match;
+  while ((match = urlPattern.exec(text)) !== null) {
+    // Clean trailing punctuation (including Chinese brackets)
+    let url = match[0].replace(/[。，,.。;；)>\]\uff09\]]+$/, '');
+    // Validate URL
+    try {
+      new URL(url.startsWith('http') ? url : 'http://' + url);
+      links.add(url);
+    } catch(e) {}
   }
 
   // PDF/Office document links
@@ -1013,13 +1050,26 @@ function extractLinks(text) {
 // Extract key information bullet points
 function extractKeyPoints(body) {
   const points = [];
-  const lines = body.split('\n').filter(l => l.trim().length > 5 && l.trim().length < 100);
+  const lines = body.split('\n').filter(l => l.trim().length > 5 && l.trim().length < 150);
+  const importantKws = ['截止', '请于', '重要', '务必', '必须', '申请', '提交', '完成', '报名', '审核', '确认', '参会', '地点', '时间'];
+  const dateRegex = /(\d+月\d+日|\d+日|\d{1,2}[.\/-]\d{1,2})/;
 
-  for (const line of lines.slice(0, 5)) {
-    const cleaned = line.replace(/^[\s\d、.。:：•\-–—]+/, '').trim();
-    if (cleaned.length > 5 && cleaned.length < 100) {
-      points.push(cleaned);
+  for (const line of lines.slice(0, 10)) {
+    const cleaned = line.replace(/^[\s\d、.。:：•\-–—>]+/, '').trim();
+    if (cleaned.length < 5 || cleaned.length > 120) continue;
+
+    // 优先提取包含关键词或日期的行
+    let isKey = false;
+    for (const kw of importantKws) {
+      if (cleaned.includes(kw)) { isKey = true; break; }
     }
+    if (!isKey && dateRegex.test(cleaned)) isKey = true;
+
+    // 前3条是关键行，放宽条件
+    if (isKey || points.length < 3) {
+      if (!points.includes(cleaned)) points.push(cleaned);
+    }
+    if (points.length >= 5) break;
   }
   return points;
 }
@@ -1124,11 +1174,12 @@ function parseNoticeBlock(block, idx) {
     }
   }
 
-  const { ddl } = parseDates(body, fallback);
+  const { pub, ddl } = parseDates(body, fallback);
   const cat = inferCategory(`${title}\n${body}`);
   const imp = inferImportance(`${title}\n${body}`);
   const owner = parseOwner(body);
   const links = extractLinks(body);
+  const keyPoints = extractKeyPoints(body);
   const now = new Date();
   const expired = ddl ? ddl < now : false;
 
@@ -1140,7 +1191,7 @@ function parseNoticeBlock(block, idx) {
     publishDate: toISO(now), // 发布时间始终为粘贴时的当天日期
     deadline: ddl ? toISO(ddl) : null,
     importance: imp,
-    owner, links, expired,
+    owner, links, keyPoints, expired,
   };
 }
 
@@ -1732,12 +1783,55 @@ async function handleWebhook(req, res) {
     }
 }
 
+function getParseDiagnostics(notice) {
+  const diag = { confidence: 'high', warnings: [] };
+
+  // Category confidence
+  if (notice.type === '其他') {
+    diag.confidence = 'low';
+    diag.warnings.push('未能自动识别分类，已归为"其他"');
+  }
+
+  // Importance confidence
+  if (notice.importance === 1 && !/(了解|参考|可知|可查)/.test(notice.body)) {
+    diag.warnings.push('未检测到重要性关键词，默认设为低重要度');
+  }
+
+  // Owner confidence
+  if (notice.owner === '未指定') {
+    diag.warnings.push('未提取到联系人信息');
+  } else if (/^(邮箱|电话)/.test(notice.owner)) {
+    diag.warnings.push(`联系人仅提取到${notice.owner.substring(0,2)}，可能缺少姓名`);
+  }
+
+  // Deadline confidence
+  if (!notice.deadline) {
+    diag.warnings.push('未提取到截止日期');
+  } else {
+    const ddl = new Date(notice.deadline);
+    const daysUntil = Math.ceil((ddl - new Date()) / 86400000);
+    if (daysUntil > 180) diag.warnings.push('截止日期距今超过半年，请确认');
+    if (daysUntil < -30) diag.warnings.push('截止日期已过期超一个月，请确认');
+  }
+
+  if (diag.confidence === 'low' || diag.warnings.length >= 2) {
+    diag.confidence = 'low';
+  } else if (diag.warnings.length >= 1) {
+    diag.confidence = 'medium';
+  }
+
+  return diag;
+}
+
 async function handlePreview(req, res) {
   try {
     const parsed = await parseJSONBody(req);
     const text = parsed.text;
     if (!text) return sendJSON(res, 400, { error: 'text required' });
-    const notices = parseRawInput(text);
+    const notices = parseRawInput(text).map(n => ({
+      ...n,
+      _diagnostics: getParseDiagnostics(n)
+    }));
     sendJSON(res, 200, { notices });
   } catch(e) {
     sendJSON(res, 500, { error: 'Parse error: ' + e.message });

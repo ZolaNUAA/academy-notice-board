@@ -2004,13 +2004,27 @@
         });
         const data = await res.json();
         const preview = data.notices ? data.notices[0] : null;
-        if (preview) {
-          preview._keyPoints = extractKeyPoints(val);
-        }
+        // 后端已返回 keyPoints 和 _diagnostics，无需前端重新提取
         state.addPreview = preview;
         if (preview) {
+          const diag = preview._diagnostics || {};
+          const warnIcon = diag.confidence === 'low' ? '⚠️' : diag.confidence === 'medium' ? '💡' : '✅';
+          const warnTitle = diag.confidence === 'low' ? '解析结果置信度较低，请检查' :
+                            diag.confidence === 'medium' ? '部分字段可能需要确认' : '解析结果看起来正常';
+          const warnStyle = diag.confidence === 'low' ? 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca' :
+                            diag.confidence === 'medium' ? 'background:#fffbeb;color:#d97706;border:1px solid #fde68a' :
+                            'background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0';
+          const warningsHtml = (diag.warnings && diag.warnings.length > 0) ? `
+            <div style="margin-top:6px;font-size:12px;line-height:1.6">
+              ${diag.warnings.map(w => `<div>• ${w}</div>`).join('')}
+            </div>
+          ` : '';
+
           container.innerHTML = `
             <div class="add-preview edit-form">
+              <div style="padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;${warnStyle}">
+                <strong>${warnIcon} ${warnTitle}</strong>${warningsHtml}
+              </div>
               <div class="edit-row">
                 <div class="edit-field" style="flex:2">
                   <label>标题</label>
@@ -2049,7 +2063,7 @@
               </div>
               <div class="edit-field" style="flex:1">
                 <label>关键信息提取</label>
-                <textarea id="editKeyPoints" rows="2" placeholder="每行一条关键信息，支持拖动调整顺序" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${(preview._keyPoints || []).join('\n')}</textarea>
+                <textarea id="editKeyPoints" rows="2" placeholder="每行一条关键信息，支持拖动调整顺序" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${((preview.keyPoints && preview.keyPoints.length > 0) ? preview.keyPoints : []).join('\n')}</textarea>
               </div>
               ${preview.body ? `<div class="edit-field" style="flex:1">
                 <label>正文</label>
