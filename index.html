@@ -1896,6 +1896,7 @@
           <div class="note-date-row">
             <span class="note-meta">📅 ${formatDate(n.publishDate)}</span>
             ${n.deadline ? `<span class="note-ddl ${ddlClass}">⏰ ${ddlText}</span>` : ''}
+            ${n.location ? `<span class="note-meta">📍 ${escapeHtml(n.location)}</span>` : ''}
           </div>
           ${keyPoints.length > 0 ? `
             <div class="key-points">

@@ -629,13 +629,54 @@ function splitNoticeBlocks(raw) {
   // If no 【】 markers, treat as one block
   if (!text.includes('【')) return [text];
 
-  // Split by 【 markers - each notice starts with 【
+  // Sub-field headers that are sections WITHIN a single notice, NOT separate notices
+  const SUB_FIELD_PATTERNS = /^(?:时间|地点|路线|报名时间|报名方式|签到|主题|主讲人|主持人|联系人|联系方式|联系电话|邮箱|学分|备注|附件|要求|说明|补充|注意|议程|参会人员|参加人员|费用|主办|承办|协办|对象|适用|范围|经费|限项)[：:】\s]|^(?:新一代|人工智能|新能源|新材料|生物医药|高端装备|机器人|集成电路|种业科技|海洋科技|6G|信息)/;
+
+  // Split by 【 at line starts (not inline 【 in body text)
+  const parts = text.split(/\n(?=【)/).filter(p => p.trim());
+  if (parts.length <= 1) {
+    // Try splitting by all 【 (some notices have 【 right after text without newline)
+    const altParts = text.split(/(?=【)/).filter(p => p.trim());
+    if (altParts.length <= 1) return [text];
+    return mergeSubFields(altParts);
+  }
+  return mergeSubFields(parts);
+}
+
+// Merge 【sub-field】 parts back into their parent notice
+function mergeSubFields(parts) {
+  // 括号内容只要完全匹配这些子字段名，就是子字段（不需要后面跟冒号）
+  const SUB_FIELD_NAMES = new Set([
+    '时间','地点','路线','报名时间','报名方式','签到','主题','主讲人','主持人',
+    '联系人','联系方式','联系电话','邮箱','学分','备注','附件','要求','说明',
+    '补充','注意','议程','参会人员','参加人员','费用','主办','承办','协办',
+    '对象','适用','范围','经费','限项','公示期','申报材料','校内截止','校内联系',
+    '相关事项','重点提示','补充说明'
+  ]);
+  const INLINE_CONTENT = /^【[^】]{30,}】/;  // Very long bracket content = inline, not a header
+
   const blocks = [];
-  // Replace 【 with \n【 to ensure split works
-  const parts = text.split(/(?=【)/);
   for (const part of parts) {
     const trimmed = part.trim();
-    if (trimmed) blocks.push(trimmed);
+    if (!trimmed) continue;
+
+    // Check if this part's 【content】 is a sub-field header or inline content
+    const bracketMatch = trimmed.match(/^【([^】\n]+)】?/);
+    const bracketContent = bracketMatch ? bracketMatch[1].trim() : '';
+    // 子字段：括号内容完全匹配已知子字段名，或括号内容以子字段名开头后跟冒号
+    const isSubField = bracketMatch && (
+      SUB_FIELD_NAMES.has(bracketContent) ||
+      /^(?:时间|地点|路线|报名时间|报名方式|签到|主题|主讲人|主持人|联系人|联系方式|联系电话|邮箱|学分|备注|附件|要求|说明|补充|注意|议程|参会人员|参加人员|费用|主办|承办|协办|对象|适用|范围|经费|限项|公示期|申报材料|校内截止|校内联系|相关事项|重点提示|补充说明)[：:】]/.test(bracketContent)
+    );
+    const isInlineLong = bracketMatch && INLINE_CONTENT.test(trimmed);
+    const isListLike = bracketMatch && /^【[^】]*[、，,]/.test(trimmed) && bracketMatch[1].length > 8;
+
+    if ((isSubField || isInlineLong || isListLike) && blocks.length > 0) {
+      // Merge with previous block (it's a sub-section)
+      blocks[blocks.length - 1] += '\n' + trimmed;
+    } else {
+      blocks.push(trimmed);
+    }
   }
   return blocks;
 }
@@ -873,6 +914,37 @@ function parseDates(text, fallback) {
     } catch(e) {}
   });
 
+  // Date ranges: "5月30日—6月30日", "4月28日-4月30日", "4月15日—5月11日"
+  // 提取结束日期为 deadline
+  [...text.matchAll(/(\d{1,2})月(\d{1,2})日?\s*[—\-~～至到]\s*(\d{1,2})月(\d{1,2})日?/g)].forEach(m => {
+    try {
+      const startD = new Date(year, parseInt(m[1], 10) - 1, parseInt(m[2], 10), 0, 0, 0);
+      const endD = new Date(year, parseInt(m[3], 10) - 1, parseInt(m[4], 10), 23, 59, 59);
+      if (!isNaN(endD.getTime())) {
+        // 日期区间的结束日期通常是截止日
+        const idx = m.index;
+        const contextBefore = text.substring(Math.max(0, idx - 20), idx);
+        const contextAfter = text.substring(idx, Math.min(text.length, idx + m[0].length + 20));
+        const isDeadlineContext = /截止|截至|deadline|申报|报名|提交|征题|活动|公示|开展|举办/.test(contextBefore + contextAfter);
+        if (isDeadlineContext || hasDeadlineKeyword) {
+          ddlCandidates.push(endD);
+        }
+        // 开始日期作为pub候选
+        if (!isNaN(startD.getTime())) {
+          pubCandidates.push(startD);
+        }
+      }
+    } catch(e) {}
+  });
+
+  // Shorthand dates: "5.7前", "5.8前" (mm.dd without year)
+  [...text.matchAll(/(?:于|预计|请于|务必于|在)?(\d{1,2})[.](\d{1,2})前/g)].forEach(m => {
+    try {
+      const d = new Date(year, parseInt(m[1], 10) - 1, parseInt(m[2], 10), 23, 59, 59);
+      if (!isNaN(d.getTime())) ddlCandidates.push(d);
+    } catch(e) {}
+  });
+
   // Format: mm月dd日
   // 只有附近有截止关键词时才归为 deadline；否则归为发布日期候选
   [...text.matchAll(/(\d{1,2})月(\d{1,2})日/g)].forEach(m => {
@@ -978,6 +1050,19 @@ function parseOwner(text) {
     return standaloneMatch[1].trim();
   }
 
+  // 人名+电话号码粘连，如 "霍然84892758"、"张小兰025-84892758"
+  const gluedNamePhone = text.match(/(?:咨询|联系|致电)\s*([\u4e00-\u9fa5]{2,3})\s*(\d{3,4}[-－]?\d{7,8}|\d{7,8}|\d{11})/);
+  if (gluedNamePhone) {
+    const name = gluedNamePhone[1];
+    const num = gluedNamePhone[2].replace(/[-－\s]/g, '');
+    if (!OWNER_BLACKLIST.has(name)) return `${name} 电话 ${num}`;
+  }
+  // 更宽松的模式: 行末中文名+数字，如 "霍然84892758"
+  const looseGlue = text.match(/([\u4e00-\u9fa5]{2,3})(\d{7,11})(?:[\s，,。；;]|$)/);
+  if (looseGlue && !OWNER_BLACKLIST.has(looseGlue[1])) {
+    return `${looseGlue[1]} 电话 ${looseGlue[2]}`;
+  }
+
   // Email pattern
   const email = text.match(/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/);
   if (email) return `邮箱 ${email[1]}`;
@@ -1048,6 +1133,34 @@ function extractLinks(text) {
 }
 
 // Extract key information bullet points
+// Extract location from text
+function extractLocation(text) {
+  // Pattern 1: 在XXX会议室|报告厅|办公室|教室|实验室
+  const venueMatch = text.match(/(?:在|地点[:：]|于)\s*([^\n，。,；;]{3,40}(?:会议室|报告厅|办公室|教室|实验室|广场|大厅|中心|基地|礼堂|活动室|接待室))/);
+  if (venueMatch) return venueMatch[1].trim();
+
+  // Pattern 2: Building + Room: 学院楼113报告厅, 综合楼612, 515会议室
+  const roomMatch = text.match(/([\u4e00-\u9fa5]{2,8}(?:楼|学院|校区|中心))?\s*(\d{3,4})\s*(?:室|房间|会议室|报告厅|办公室|教室)/);
+  if (roomMatch) {
+    const building = roomMatch[1] || '';
+    return (building + roomMatch[2] + (roomMatch[3] || '室')).trim();
+  }
+
+  // Pattern 3: "XXX学院XXX室" format
+  const collegeRoom = text.match(/([\u4e00-\u9fa5]{2,6}学院)\s*(\d{3,4})\s*(?:室|会议室|报告厅|办公室)/);
+  if (collegeRoom) return collegeRoom[0].trim();
+
+  // Pattern 4: "地点：XXX" or "位置：XXX"
+  const locLabel = text.match(/(?:地点|位置|地址)[：:]\s*([^\n，。,；;]{3,60})/);
+  if (locLabel) return locLabel[1].trim();
+
+  // Pattern 5: 地名+方位: 西大门内、国旗广场、中山陵等
+  const placeMatch = text.match(/(?:在|于|至)\s*([^\n，。,；;]{2,30}(?:广场|公园|门口|大门|厅|处|点|区|路|街|道|园|楼))/);
+  if (placeMatch) return placeMatch[1].trim();
+
+  return null;
+}
+
 function extractKeyPoints(body) {
   const points = [];
   const lines = body.split('\n').filter(l => l.trim().length > 5 && l.trim().length < 150);
@@ -1180,6 +1293,7 @@ function parseNoticeBlock(block, idx) {
   const owner = parseOwner(body);
   const links = extractLinks(body);
   const keyPoints = extractKeyPoints(body);
+  const location = extractLocation(body);
   const now = new Date();
   const expired = ddl ? ddl < now : false;
 
@@ -1191,7 +1305,7 @@ function parseNoticeBlock(block, idx) {
     publishDate: toISO(now), // 发布时间始终为粘贴时的当天日期
     deadline: ddl ? toISO(ddl) : null,
     importance: imp,
-    owner, links, keyPoints, expired,
+    owner, location, links, keyPoints, expired,
   };
 }
 
