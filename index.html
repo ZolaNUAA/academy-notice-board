@@ -748,46 +748,31 @@
     body.dark-mode .header .logo { color: #e0e0e0; }
     body.dark-mode .tab { background: #2d2d44; color: #a0a0a0; }
     body.dark-mode .tab.active { background: #3b82f6; color: #fff; }
-    body.dark-mode .sticky-note { background: #2d2d44 !important; color: #e0e0e0; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
-    body.dark-mode .sticky-note.expired { opacity: 0.6; }
-    body.dark-mode .note-badge.type-research { background: #3d3520; color: #fbbf24; }
-    body.dark-mode .note-badge.type-teaching { background: #3d2e1a; color: #fb923c; }
-    body.dark-mode .note-badge.type-postgrad { background: #1a2940; color: #7ca3f5; }
-    body.dark-mode .note-badge.type-student { background: #1a3020; color: #5ced73; }
-    body.dark-mode .note-badge.type-party { background: #3d1a1a; color: #fca5a5; }
-    body.dark-mode .note-badge.type-personnel { background: #301a30; color: #d8b4fe; }
-    body.dark-mode .note-badge.type-confidential { background: #3d1a1a; color: #f87171; }
-    body.dark-mode .note-badge.type-state-assets { background: #251a35; color: #a78bfa; }
-    body.dark-mode .note-badge.type-safety { background: #3d3520; color: #facc15; }
-    body.dark-mode .note-badge.type-international { background: #1a2530; color: #67e8f9; }
-    body.dark-mode .note-badge.type-admin { background: #2d2d44; color: #9ca3af; }
-    body.dark-mode .note-badge.type-other { background: #2d2d44; color: #9ca3af; }
-    body.dark-mode .info-chip.chip-ddl-urgent { background: #3d1a1a; color: #fca5a5; }
-    body.dark-mode .info-chip.chip-ddl-soon { background: #3d3520; color: #fbbf24; }
-    body.dark-mode .info-chip.chip-ddl-normal { background: #1a3020; color: #6ee7b7; }
-    body.dark-mode .info-chip.chip-ddl-expired { background: #2d2d44; color: #6b7280; }
-    body.dark-mode .info-chip.chip-location { background: #1a2540; color: #7ca3f5; }
-    body.dark-mode .info-chip.chip-owner { background: #251a35; color: #c084fc; }
-    body.dark-mode .info-chip.chip-urgent { background: #3d1a1a; color: #fca5a5; }
-    body.dark-mode .urgency-strip.level-urgent { opacity: 0.8; }
-    body.dark-mode .urgency-strip.level-soon { opacity: 0.8; }
-    body.dark-mode .cat-research { background: linear-gradient(145deg, #2a2518, #252010) !important; border-left-color: #f59e0b; }
-    body.dark-mode .cat-teaching { background: linear-gradient(145deg, #2a2018, #251d10) !important; border-left-color: #f97316; }
-    body.dark-mode .cat-postgrad { background: linear-gradient(145deg, #1a1f2a, #151a25) !important; border-left-color: #3b82f6; }
-    body.dark-mode .cat-student { background: linear-gradient(145deg, #182018, #151d15) !important; border-left-color: #22c55e; }
-    body.dark-mode .cat-party { background: linear-gradient(145deg, #2a1515, #251010) !important; border-left-color: #dc2626; }
-    body.dark-mode .cat-personnel { background: linear-gradient(145deg, #251820, #20151d) !important; border-left-color: #c026d3; }
-    body.dark-mode .cat-confidential { background: linear-gradient(145deg, #2a1515, #251010) !important; border-left-color: #ef4444; }
-    body.dark-mode .cat-state-assets { background: linear-gradient(145deg, #1d1828, #181525) !important; border-left-color: #8b5cf6; }
-    body.dark-mode .cat-safety { background: linear-gradient(145deg, #2a2518, #252010) !important; border-left-color: #eab308; }
-    body.dark-mode .cat-international { background: linear-gradient(145deg, #151f25, #101a20) !important; border-left-color: #06b6d4; }
-    body.dark-mode .cat-admin { background: linear-gradient(145deg, #222233, #1d1d2e) !important; border-left-color: #6b7280; }
-    body.dark-mode .cat-other { background: linear-gradient(145deg, #252535, #202030) !important; border-left-color: #6b7280; }
-    body.dark-mode .note-title { color: #e0e0e0; }
-    body.dark-mode .note-content { color: #b0b0b0; }
+    /* Dark mode — 统一深色底+左侧彩色边 */
+    body.dark-mode .sticky-note { background: #1e1e30 !important; color: #c8c8d0; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+    body.dark-mode .sticky-note.expired { opacity: 0.5; }
+    body.dark-mode .note-badge { opacity: 0.85; }
+    body.dark-mode .note-title { color: #e8e8f0; }
+    body.dark-mode .note-content { color: #b0b0c0; }
     body.dark-mode .note-meta { color: #888; }
-    body.dark-mode .note-ddl { color: #ff9999; }
+    body.dark-mode .note-owner { color: #888; }
+    body.dark-mode .note-links { border-top-color: rgba(255,255,255,0.1); }
     body.dark-mode .note-links a { color: #7ca3f5; }
+    body.dark-mode .note-footer { border-top-color: rgba(255,255,255,0.1); }
+    body.dark-mode .pin { border-color: #1e1e30; }
+    body.dark-mode .highlight { background: rgba(251,191,36,0.2); }
+    body.dark-mode .highlight-date { background: rgba(59,130,246,0.2); color: #7ca3f5; }
+    body.dark-mode .info-chip.chip-ddl-urgent { background: rgba(220,38,38,0.2); color: #fca5a5; }
+    body.dark-mode .info-chip.chip-ddl-soon { background: rgba(217,119,6,0.2); color: #fbbf24; }
+    body.dark-mode .info-chip.chip-ddl-normal { background: rgba(22,163,74,0.15); color: #6ee7b7; }
+    body.dark-mode .info-chip.chip-ddl-expired { background: rgba(107,114,128,0.15); color: #9ca3af; }
+    body.dark-mode .info-chip.chip-location { background: rgba(59,130,246,0.15); color: #7ca3f5; }
+    body.dark-mode .info-chip.chip-owner { background: rgba(147,51,234,0.15); color: #c084fc; }
+    body.dark-mode .info-chip.chip-urgent { background: rgba(220,38,38,0.2); color: #fca5a5; }
+    body.dark-mode .key-points { background: rgba(255,255,255,0.03); }
+    body.dark-mode .key-points li { color: #b0b0c0; }
+    body.dark-mode .attachment-link { background: rgba(5,150,105,0.15); color: #6ee7b7; }
+    body.dark-mode .attachment-link:hover { background: rgba(5,150,105,0.25); }
     body.dark-mode .search-box { background: #2d2d44; }
     body.dark-mode .search-box input { background: #1a1a2e; color: #e0e0e0; border-color: #444; }
     body.dark-mode .category-tags { background: #1a1a2e; }
