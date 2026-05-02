@@ -1460,6 +1460,7 @@
                 <span id="fileCount" style="color:#94a3b8;font-size:12px;margin-left:8px"></span>
                 <div id="fileList" class="file-list"></div>
               </div>
+              <h3 style="font-size:16px;color:#1f2937;margin:16px 0 10px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:6px">📌 便签预览 <span id="previewSource" style="font-size:11px;color:#888;font-weight:400"></span></h3>
               <div id="previewContainer"></div>
               <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeAddModal()">取消</button>
@@ -2302,6 +2303,8 @@
       if (textarea) textarea.value = '';
       const container = document.getElementById('previewContainer');
       if (container) container.innerHTML = '';
+      const srcEl = document.getElementById('previewSource');
+      if (srcEl) srcEl.textContent = '';
       render();
     };
 
@@ -2322,7 +2325,6 @@
       const warnStyle = conf === 'low' ? 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca' :
                         conf === 'medium' ? 'background:#fffbeb;color:#d97706;border:1px solid #fde68a' :
                         'background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0';
-      const srcHtml = sourceLabel ? ` <span style="font-size:11px;color:#888;font-weight:400">(${sourceLabel})</span>` : '';
       const warningsHtml = (diag.warnings && diag.warnings.length > 0) ? `<div style="margin-top:6px;font-size:12px;line-height:1.6">${diag.warnings.map(w => '<div>• ' + w + '</div>').join('')}</div>` : '';
       const kp = ((preview.keyPoints && preview.keyPoints.length > 0) ? preview.keyPoints : []).join('\n');
       const types = ['科研','教学','研究生','学工','党务','人事','保密','国资','安全','国合','全院','其他'];
@@ -2336,8 +2338,11 @@
         return `<span class="preview-link" style="margin-right:8px;color:#888">${icoMap[ext.toLowerCase()]||'📎'} ${escapeHtml(a.name)} (待上传)</span>`;
       };
 
-      container.innerHTML = `<h3 style="font-size:16px;color:#1f2937;margin:0 0 12px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:6px">📌 便签预览 ${srcHtml}</h3>
-        <div class="add-preview edit-form">
+      // Update source label
+      const srcEl = document.getElementById('previewSource');
+      if (srcEl) srcEl.textContent = sourceLabel ? `(${sourceLabel})` : '';
+
+      container.innerHTML = `<div class="add-preview edit-form">
           <div style="padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;${warnStyle}"><strong>${warnIcon} ${warnTitle}</strong>${warningsHtml}</div>
           <div class="edit-row">
           <div class="edit-field" style="flex:2"><label>标题</label><input type="text" id="editTitle" value="${escapeHtml(preview.title)}" oninput="updatePreviewField('title', this.value)"></div>
