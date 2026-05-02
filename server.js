@@ -2488,11 +2488,15 @@ function handleStats(req, res) {
     if (typeCounts[n.type] !== undefined) typeCounts[n.type]++;
   }
 
+  const activeNotices = notices.filter(n => !n.expired).length;
+  const expiredNotices = notices.filter(n => n.expired).length;
   sendJSON(res, 200, {
     totalVisits: config.visits,
     lastVisit: config.lastVisit,
     todayNotices: todayCount,
     totalNotices: notices.length,
+    activeNotices,
+    expiredNotices,
     typeCounts,
     version: cachedVersion ? cachedVersion.version : (process.env.DEPLOY_VERSION || getGitShortHash()),
     versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || getGitCommitDate() || SERVER_START_TIME),

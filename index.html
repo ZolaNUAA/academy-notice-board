@@ -1332,7 +1332,7 @@
             <div style="display:flex;justify-content:space-between;align-items:flex-start">
               <div>
                 <h1>🏫 石榴院通知看板</h1>
-                <p>${state.isAdmin ? (state.adminRole === 'root' ? '👑 超级管理员' : '⚡ 管理员') + ' · ' + state.adminUsername + ' · ' : '欢迎访问 · '}已收录 ${state.notices.length} 条通知</p>
+                <p>${state.isAdmin ? (state.adminRole === 'root' ? '👑 超级管理员' : '⚡ 管理员') + ' · ' + state.adminUsername + ' · ' : '欢迎访问 · '}有效期内通知 <b>${state.stats?.activeNotices ?? 0}</b> 条，已过期通知 <b>${state.stats?.expiredNotices ?? 0}</b> 条</p>
               </div>
               ${state.stats?.version ? `<div style="font-size:11px;color:#888;text-align:right;line-height:1.5">
                 <span style="color:#666">v${state.stats.version}</span>
