@@ -6,6 +6,7 @@ const os = require('os');
 const storage = require('./lib/storage');
 
 const PORT = process.env.PORT || 3000;
+const SERVER_START_TIME = new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'});
 // 检测/mnt是否可用（存在且可写）
 const BASE_DIR = process.env.STORAGE_MNT || '/mnt';
 let USE_MNT = false;
@@ -2349,7 +2350,7 @@ function handleStats(req, res) {
     totalNotices: notices.length,
     typeCounts,
     version: cachedVersion ? cachedVersion.version : (process.env.DEPLOY_VERSION || getGitShortHash()),
-    versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})),
+    versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || SERVER_START_TIME),
     indexHtmlTime: (() => {
       try {
         const stat = fs.statSync(path.join(__dirname, 'index.html'));
