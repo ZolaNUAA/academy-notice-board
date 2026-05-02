@@ -1066,13 +1066,27 @@
         result = result.split(key).join(html);
       }
 
-      // Step 3c: Preserve URLs to prevent date patterns inside URLs from being highlighted
-      const urlMap = {};
-      let urlIdx = 0;
+      // Step 3c: Preserve phone numbers and URLs to prevent false date highlighting
+      const protectMap = {};
+      let protectIdx = 0;
+      const protect = (full, replacement) => {
+        const key = `__PR_${protectIdx}__`;
+        protectMap[key] = replacement || full;
+        protectIdx++;
+        return key;
+      };
+      // Phone numbers: 025-84892758, 138-1234-5678, (025)84892758, 13812345678, 84892758
+      result = result.replace(/(?:\(?\d{3,4}\)?[\s-]?\d{3,4}[\s-]?\d{4,8}|\d{7,11})/g, (full) => {
+        // Only protect if it looks like a phone number (not a standalone short number)
+        const digits = full.replace(/\D/g, '');
+        if (digits.length >= 7) return protect(full, full);
+        return full;
+      });
+      // URLs
       result = result.replace(/(https?:\/\/[^\s<>"']+)/g, (full) => {
-        const key = `__URL_${urlIdx}__`;
-        urlMap[key] = `<a href="${full}" target="_blank" class="highlight-link">${full}</a>`;
-        urlIdx++;
+        const key = `__PR_${protectIdx}__`;
+        protectMap[key] = `<a href="${full}" target="_blank" class="highlight-link">${full}</a>`;
+        protectIdx++;
         return key;
       });
 
@@ -1087,8 +1101,8 @@
         result = result.replace(regex, '<span class="highlight">$1</span>');
       }
 
-      // Step 5b: Restore URLs (already as clickable links, immune to date highlighting)
-      for (const [key, html] of Object.entries(urlMap)) {
+      // Step 5b: Restore protected content (phone numbers, URLs)
+      for (const [key, html] of Object.entries(protectMap)) {
         result = result.split(key).join(html);
       }
 
