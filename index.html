@@ -305,7 +305,7 @@
       background: #fff;
       border-radius: 20px;
       padding: 28px;
-      max-width: 1000px;
+      max-width: 1100px;
       width: 100%;
       max-height: 90vh;
       overflow-y: auto;
@@ -742,7 +742,7 @@
     }
     .edit-field textarea {
       resize: vertical;
-      min-height: 60px;
+      min-height: 100px;
     }
     .edit-links {
       margin-top: 8px;
@@ -1450,7 +1450,7 @@
             <div class="modal" onclick="event.stopPropagation()">
               <h2>➕ 添加通知</h2>
               <p>粘贴微信群通知文本，系统将自动解析分类、提取关键信息</p>
-              <textarea id="addTextarea" placeholder="粘贴通知文本或直接粘贴图片..." oninput="handleAddInput(this.value)" onpaste="handlePaste(event)"></textarea>
+              <textarea id="addTextarea" rows="6" placeholder="粘贴通知文本或直接粘贴图片..." oninput="handleAddInput(this.value)" onpaste="handlePaste(event)"></textarea>
               <div class="file-upload-area">
                 <input type="file" id="addFiles" multiple onchange="handleFilesChange(this.files)">
                 <label for="addFiles" class="file-upload-label">
@@ -2349,8 +2349,8 @@
           <div class="edit-field"><label>截止日期</label><input type="date" id="editDeadline" value="${preview.deadline||''}" oninput="updatePreviewField('deadline', this.value)"></div>
           <div class="edit-field" style="flex:2"><label>负责人</label><input type="text" id="editOwner" value="${escapeHtml(preview.owner)}" oninput="updatePreviewField('owner', this.value)"></div>
         </div>
-        <div class="edit-field" style="flex:1"><label>关键信息提取</label><textarea id="editKeyPoints" rows="2" placeholder="每行一条关键信息" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${kp}</textarea></div>
-        ${preview.body ? '<div class="edit-field" style="flex:1"><label>正文</label><textarea id="editBody" rows="6" oninput="updateBodyPreview()">'+escapeHtml(preview.body)+'</textarea><div id="bodyPreview" style="margin-top:6px;padding:10px;background:#fafafa;border:1px solid #e5e7eb;border-radius:6px;max-height:200px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap"></div></div>' : ''}
+        <div class="edit-field" style="flex:1"><label>关键信息提取</label><textarea id="editKeyPoints" rows="3" placeholder="每行一条关键信息" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${kp}</textarea></div>
+        ${preview.body ? '<div class="edit-field" style="flex:1"><label>正文</label><textarea id="editBody" rows="8" oninput="updateBodyPreview()">'+escapeHtml(preview.body)+'</textarea><div id="bodyPreview" style="margin-top:6px;padding:10px;background:#fafafa;border:1px solid #e5e7eb;border-radius:6px;max-height:200px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap"></div></div>' : ''}
         ${preview.links&&preview.links.length>0 ? '<div class="edit-links"><label>链接</label>'+preview.links.map(l=>'<a href="'+l+'" target="_blank" class="preview-link" style="margin-right:8px">🔗 '+escapeHtml(l)+'</a>').join('')+'</div>' : ''}
         ${(preview.attachments&&preview.attachments.length>0)||state.pendingAttachments.length>0 ? '<div class="edit-links"><label>附件</label>'+(preview.attachments||[]).map(renderAtt).join('')+state.pendingAttachments.map(renderPend).join('')+'</div>' : ''}
       </div>
