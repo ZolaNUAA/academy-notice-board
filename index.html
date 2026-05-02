@@ -1560,6 +1560,7 @@
                 </div>
                 <div class="form-group">
                   <label>正文</label>
+                  ${FORMAT_TOOLBAR}
                   <textarea id="editBody" rows="6" onpaste="handleEditPaste(event)">${escapeHtml(state.editingNotice.body)}</textarea>
                 </div>
               </div>
@@ -2348,7 +2349,7 @@
           <div class="edit-field" style="flex:2"><label>负责人</label><input type="text" id="editOwner" value="${escapeHtml(preview.owner)}" oninput="updatePreviewField('owner', this.value)"></div>
         </div>
         <div class="edit-field" style="flex:1"><label>关键信息提取</label><textarea id="editKeyPoints" rows="3" placeholder="每行一条关键信息" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${kp}</textarea></div>
-        ${preview.body ? '<div class="edit-field" style="flex:1"><label>正文</label><textarea id="editBody" rows="8" oninput="updateBodyPreview()">'+escapeHtml(preview.body)+'</textarea><h3 style="font-size:15px;color:#1f2937;margin:10px 0 6px;padding-bottom:5px;border-bottom:2px solid #e5e7eb">📌 便签预览<span id="previewSource" style="font-size:11px;color:#888;font-weight:400;margin-left:6px"></span></h3><div id="bodyPreview" style="padding:10px;background:#fafafa;border:1px solid #e5e7eb;border-radius:6px;max-height:250px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap"></div></div>' : ''}
+        ${preview.body ? '<div class="edit-field" style="flex:1"><label>正文</label>${FORMAT_TOOLBAR}<textarea id="editBody" rows="8" oninput="updateBodyPreview()">'+escapeHtml(preview.body)+'</textarea><h3 style="font-size:15px;color:#1f2937;margin:10px 0 6px;padding-bottom:5px;border-bottom:2px solid #e5e7eb">📌 便签预览<span id="previewSource" style="font-size:11px;color:#888;font-weight:400;margin-left:6px"></span></h3><div id="bodyPreview" style="padding:10px;background:#fafafa;border:1px solid #e5e7eb;border-radius:6px;max-height:250px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap"></div></div>' : ''}
         ${preview.links&&preview.links.length>0 ? '<div class="edit-links"><label>链接</label>'+preview.links.map(l=>'<a href="'+l+'" target="_blank" class="preview-link" style="margin-right:8px">🔗 '+escapeHtml(l)+'</a>').join('')+'</div>' : ''}
         ${(preview.attachments&&preview.attachments.length>0)||state.pendingAttachments.length>0 ? '<div class="edit-links"><label>附件</label>'+(preview.attachments||[]).map(renderAtt).join('')+state.pendingAttachments.map(renderPend).join('')+'</div>' : ''}
       </div>
@@ -2775,6 +2776,29 @@ window.handleLogin = async function() {
         });
       });
     };
+
+    // Format text toolbar helper
+    window.formatText = function(textareaId, openTag, closeTag) {
+      const ta = document.getElementById(textareaId);
+      if (!ta) return;
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      const text = ta.value;
+      const selected = text.substring(start, end);
+      ta.value = text.substring(0, start) + openTag + selected + closeTag + text.substring(end);
+      ta.focus();
+      ta.selectionStart = start + openTag.length;
+      ta.selectionEnd = end + openTag.length;
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    const FORMAT_TOOLBAR = `<div class="format-toolbar" style="margin-bottom:4px;display:flex;gap:3px;flex-wrap:wrap">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="formatText('editBody','<b>','</b>')" title="加粗" style="padding:2px 8px;font-size:12px;font-weight:bold">B</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="formatText('editBody','<u>','</u>')" title="下划线" style="padding:2px 8px;font-size:12px;text-decoration:underline">U</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="formatText('editBody','<font color=#dc2626>','</font>')" title="红色高亮" style="padding:2px 6px;font-size:12px;color:#dc2626">🔴红</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="formatText('editBody','<font color=#2563eb>','</font>')" title="蓝色高亮" style="padding:2px 6px;font-size:12px;color:#2563eb">🔵蓝</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="formatText('editBody','<font color=#16a34a>','</font>')" title="绿色高亮" style="padding:2px 6px;font-size:12px;color:#16a34a">🟢绿</button>
+    </div>`;
 
     window.handleEdit = function(id) {
       const notice = state.notices.find(n => n.id === id);
