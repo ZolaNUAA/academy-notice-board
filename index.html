@@ -939,6 +939,7 @@
     body.dark-mode #visitStats div[style*="color:#555"] { color: #aeb8d4 !important; }
     body.dark-mode #visitStats div[style*="color:#666"] { color: #9aa7bd !important; }
     body.dark-mode #visitStats div[style*="border-bottom:1px solid #e5e7eb"] { border-color: rgba(148,163,184,0.18) !important; }
+    body.dark-mode #visitStats span[style*="color:#059669"] { color: #6ee7b7 !important; }
     body.dark-mode .add-preview { background: #1a1a2e; border-color: #444; }
     body.dark-mode .preview-title { color: #e0e0e0; }
     body.dark-mode .preview-body-preview { background: #252540; color: #b0b0b0; }
@@ -2288,7 +2289,8 @@
               <div style="border-bottom:1px solid #e5e7eb;padding:4px 0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px">
                 <span style="color:#3b82f6">${new Date(r.time).toLocaleString('zh-CN')}</span>
                 <span style="color:#888;font-family:monospace">${r.ip || '?'}</span>
-                <span style="color:#aaa;font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(r.ua || '').replace(/Mozilla\/[\d.]+ /,'').replace(/AppleWebKit\/[\d.]+ /,'').replace(/\(KHTML, like Gecko\)/,'')}</span>
+                <span style="color:#059669;font-size:11px">${r.location || ''}</span>
+                <span style="color:#aaa;font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(r.ua || '').replace(/Mozilla\/[\d.]+ /,'').replace(/AppleWebKit\/[\d.]+ /,'').replace(/\(KHTML, like Gecko\)/,'')}</span>
               </div>
             `).join('') : '<div style="color:#888;text-align:center;padding:10px">暂无记录</div>'}
           </div>

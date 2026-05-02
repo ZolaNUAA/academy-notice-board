@@ -2312,32 +2312,80 @@ async function handleParserConfig(req, res) {
   sendJSON(res, 405, { error: 'Method not allowed' });
 }
 
-// Visit statistics (for admin)
-function handleVisitStats(req, res) {
-  if (!requireAdmin(req, res)) return;
-  const daily = config.dailyVisits || {};
-  const recent = config.recentAccess || [];
-  const days = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().substring(0, 10);
-    days.push({ date: key, count: daily[key] || 0 });
+// IP geolocation cache (in-memory, cleared on restart)
+const _ipLocationCache = new Map();
+
+function lookupIPLocation(ip) {
+  if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
+    return Promise.resolve('内网');
   }
-  const todayKey = new Date().toISOString().substring(0, 10);
-  const todayVisits = daily[todayKey] || 0;
-  const thisWeekVisits = days.reduce((s, d) => s + d.count, 0);
-  sendJSON(res, 200, {
-    totalVisits: config.visits,
-    todayVisits,
-    thisWeekVisits,
-    dailyVisits: days,
-    recentAccess: recent.slice(0, 20).map(r => ({
+  if (_ipLocationCache.has(ip)) {
+    return Promise.resolve(_ipLocationCache.get(ip));
+  }
+  return new Promise((resolve) => {
+    const req = http.get(`http://ip-api.com/json/${encodeURIComponent(ip)}?lang=zh-CN&fields=city,regionName,country`, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        try {
+          const obj = JSON.parse(data);
+          if (obj.city) {
+            const loc = obj.city === obj.regionName ? obj.city : `${obj.city || ''} ${obj.regionName || ''}`.trim();
+            _ipLocationCache.set(ip, loc || '未知');
+            resolve(loc || '未知');
+          } else {
+            _ipLocationCache.set(ip, '未知');
+            resolve('未知');
+          }
+        } catch { _ipLocationCache.set(ip, '未知'); resolve('未知'); }
+      });
+    });
+    req.on('error', () => resolve('未知'));
+    req.setTimeout(3000, () => { req.destroy(); resolve('未知'); });
+  });
+}
+
+async function enrichRecentAccess(recent) {
+  const enriched = [];
+  for (const r of recent.slice(0, 20)) {
+    enriched.push({
       time: r.time,
       ip: r.ip,
-      ua: r.ua
-    }))
-  });
+      ua: r.ua,
+      location: await lookupIPLocation(r.ip)
+    });
+  }
+  return enriched;
+}
+
+// Visit statistics (for admin)
+async function handleVisitStats(req, res) {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const daily = config.dailyVisits || {};
+    const recent = config.recentAccess || [];
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().substring(0, 10);
+      days.push({ date: key, count: daily[key] || 0 });
+    }
+    const todayKey = new Date().toISOString().substring(0, 10);
+    const todayVisits = daily[todayKey] || 0;
+    const thisWeekVisits = days.reduce((s, d) => s + d.count, 0);
+    const enriched = await enrichRecentAccess(recent);
+    sendJSON(res, 200, {
+      totalVisits: config.visits,
+      todayVisits,
+      thisWeekVisits,
+      dailyVisits: days,
+      recentAccess: enriched
+    });
+  } catch(e) {
+    console.error('[VisitStats] Error:', e.message);
+    sendJSON(res, 200, { totalVisits: config.visits, todayVisits: 0, thisWeekVisits: 0, dailyVisits: [], recentAccess: [] });
+  }
 }
 
 // Logs viewer (for root)
