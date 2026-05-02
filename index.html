@@ -1460,7 +1460,6 @@
                 <span id="fileCount" style="color:#94a3b8;font-size:12px;margin-left:8px"></span>
                 <div id="fileList" class="file-list"></div>
               </div>
-              <h3 style="font-size:16px;color:#1f2937;margin:16px 0 10px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:6px">📌 便签预览 <span id="previewSource" style="font-size:11px;color:#888;font-weight:400"></span></h3>
               <div id="previewContainer"></div>
               <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeAddModal()">取消</button>
@@ -2303,8 +2302,6 @@
       if (textarea) textarea.value = '';
       const container = document.getElementById('previewContainer');
       if (container) container.innerHTML = '';
-      const srcEl = document.getElementById('previewSource');
-      if (srcEl) srcEl.textContent = '';
       render();
     };
 
@@ -2338,10 +2335,6 @@
         return `<span class="preview-link" style="margin-right:8px;color:#888">${icoMap[ext.toLowerCase()]||'📎'} ${escapeHtml(a.name)} (待上传)</span>`;
       };
 
-      // Update source label
-      const srcEl = document.getElementById('previewSource');
-      if (srcEl) srcEl.textContent = sourceLabel ? `(${sourceLabel})` : '';
-
       container.innerHTML = `<div class="add-preview edit-form">
           <div style="padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;${warnStyle}"><strong>${warnIcon} ${warnTitle}</strong>${warningsHtml}</div>
           <div class="edit-row">
@@ -2355,7 +2348,7 @@
           <div class="edit-field" style="flex:2"><label>负责人</label><input type="text" id="editOwner" value="${escapeHtml(preview.owner)}" oninput="updatePreviewField('owner', this.value)"></div>
         </div>
         <div class="edit-field" style="flex:1"><label>关键信息提取</label><textarea id="editKeyPoints" rows="3" placeholder="每行一条关键信息" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${kp}</textarea></div>
-        ${preview.body ? '<div class="edit-field" style="flex:1"><label>正文</label><textarea id="editBody" rows="8" oninput="updateBodyPreview()">'+escapeHtml(preview.body)+'</textarea><div id="bodyPreview" style="margin-top:6px;padding:10px;background:#fafafa;border:1px solid #e5e7eb;border-radius:6px;max-height:200px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap"></div></div>' : ''}
+        ${preview.body ? '<div class="edit-field" style="flex:1"><label>正文</label><textarea id="editBody" rows="8" oninput="updateBodyPreview()">'+escapeHtml(preview.body)+'</textarea><h3 style="font-size:15px;color:#1f2937;margin:10px 0 6px;padding-bottom:5px;border-bottom:2px solid #e5e7eb">📌 便签预览<span id="previewSource" style="font-size:11px;color:#888;font-weight:400;margin-left:6px"></span></h3><div id="bodyPreview" style="padding:10px;background:#fafafa;border:1px solid #e5e7eb;border-radius:6px;max-height:250px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap"></div></div>' : ''}
         ${preview.links&&preview.links.length>0 ? '<div class="edit-links"><label>链接</label>'+preview.links.map(l=>'<a href="'+l+'" target="_blank" class="preview-link" style="margin-right:8px">🔗 '+escapeHtml(l)+'</a>').join('')+'</div>' : ''}
         ${(preview.attachments&&preview.attachments.length>0)||state.pendingAttachments.length>0 ? '<div class="edit-links"><label>附件</label>'+(preview.attachments||[]).map(renderAtt).join('')+state.pendingAttachments.map(renderPend).join('')+'</div>' : ''}
       </div>
@@ -2363,6 +2356,9 @@
         <button type="button" class="btn btn-secondary btn-sm" onclick="handleAIParse()" id="aiParseBtn">🤖 AI智能解析</button>
         <span style="font-size:11px;color:#888" id="aiParseStatus"></span>
       </div>`;
+      // Update source label after innerHTML
+      const srcEl = document.getElementById('previewSource');
+      if (srcEl) srcEl.textContent = sourceLabel ? `(${sourceLabel})` : '';
       // 初始触发body预览
       if (preview && preview.body) setTimeout(() => updateBodyPreview(), 80);
     }
