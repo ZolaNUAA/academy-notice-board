@@ -2386,6 +2386,9 @@
       const text = textarea.value;
       if (!text.trim()) return;
 
+      // Save locally extracted links before AI replaces them
+      const localLinks = (state.addPreview && state.addPreview.links) ? [...state.addPreview.links] : [];
+
       btn.disabled = true;
       btn.textContent = '⏳ 解析中...';
       if (status) { status.textContent = '正在调用AI，约需5-15秒...'; status.style.color = '#888'; }
@@ -2399,6 +2402,15 @@
         const data = await res.json();
         if (data.notices && data.notices.length > 0) {
           state.addPreview = data.notices[0];
+          // Merge locally extracted links that AI may have missed
+          if (localLinks.length > 0) {
+            const aiLinks = state.addPreview.links || [];
+            const merged = [...aiLinks];
+            for (const link of localLinks) {
+              if (!merged.includes(link)) merged.push(link);
+            }
+            state.addPreview.links = merged.slice(0, 5);
+          }
           const container = document.getElementById('previewContainer');
           renderPreviewForm(container, state.addPreview, 'AI解析');
           if (status) { status.textContent = '✅ AI解析完成'; status.style.color = '#16a34a'; }
@@ -2703,6 +2715,7 @@ window.handleLogin = async function() {
               created.owner = noticeData.owner;
               created.body = noticeData.body;
               created.keyPoints = noticeData.keyPoints;
+              created.links = noticeData.links || [];
               // Save the updated notice
               await fetch('/api/notices/' + created.id, {
                 method: 'PATCH',
