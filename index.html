@@ -305,15 +305,17 @@
       background: #fff;
       border-radius: 20px;
       padding: 28px;
-      max-width: 820px;
+      max-width: 1000px;
       width: 100%;
       max-height: 90vh;
       overflow-y: auto;
       box-shadow: 0 25px 70px rgba(0,0,0,0.25);
     }
     .modal h2 { margin-bottom: 6px; font-size: 20px; }
+    .modal h3.section-title { font-size: 15px; color: #444; margin: 18px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #e5e7eb; display: flex; align-items: center; gap: 6px; }
     .modal p { color: #888; font-size: 13px; margin-bottom: 16px; }
     .modal textarea { width: 100%; padding: 10px; border: 1px solid #e0e0e0; border-radius: 10px; font-size: 13px; font-family: inherit; resize: vertical; box-sizing: border-box; }
+    body.dark-mode .modal h3.section-title { color: #ccc; border-color: #444; }
 
     /* Login Success Animation */
     @keyframes loginSuccess {
@@ -2334,9 +2336,10 @@
         return `<span class="preview-link" style="margin-right:8px;color:#888">${icoMap[ext.toLowerCase()]||'📎'} ${escapeHtml(a.name)} (待上传)</span>`;
       };
 
-      container.innerHTML = `<div class="add-preview edit-form">
-        <div style="padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;${warnStyle}"><strong>${warnIcon} ${warnTitle}</strong>${srcHtml}${warningsHtml}</div>
-        <div class="edit-row">
+      container.innerHTML = `<h3 class="section-title">📌 便签预览 ${srcHtml}</h3>
+        <div class="add-preview edit-form">
+          <div style="padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;${warnStyle}"><strong>${warnIcon} ${warnTitle}</strong>${warningsHtml}</div>
+          <div class="edit-row">
           <div class="edit-field" style="flex:2"><label>标题</label><input type="text" id="editTitle" value="${escapeHtml(preview.title)}" oninput="updatePreviewField('title', this.value)"></div>
           <div class="edit-field"><label>类型</label><select id="editType" onchange="updatePreviewField('type', this.value)">${types.map(t => '<option value="'+t+'" '+(preview.type===t?'selected':'')+'>'+t+'</option>').join('')}</select></div>
           <div class="edit-field"><label>重要性</label><select id="editImportance" onchange="updatePreviewField('importance', parseInt(this.value))"><option value="1" ${preview.importance===1?'selected':''}>⭐ 低</option><option value="2" ${preview.importance===2?'selected':''}>⭐⭐ 中</option><option value="3" ${preview.importance===3?'selected':''}>⭐⭐⭐ 高</option></select></div>
