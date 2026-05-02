@@ -2312,6 +2312,34 @@ async function handleParserConfig(req, res) {
   sendJSON(res, 405, { error: 'Method not allowed' });
 }
 
+// Visit statistics (for admin)
+function handleVisitStats(req, res) {
+  if (!requireAdmin(req, res)) return;
+  const daily = config.dailyVisits || {};
+  const recent = config.recentAccess || [];
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().substring(0, 10);
+    days.push({ date: key, count: daily[key] || 0 });
+  }
+  const todayKey = new Date().toISOString().substring(0, 10);
+  const todayVisits = daily[todayKey] || 0;
+  const thisWeekVisits = days.reduce((s, d) => s + d.count, 0);
+  sendJSON(res, 200, {
+    totalVisits: config.visits,
+    todayVisits,
+    thisWeekVisits,
+    dailyVisits: days,
+    recentAccess: recent.slice(0, 20).map(r => ({
+      time: r.time,
+      ip: r.ip,
+      ua: r.ua
+    }))
+  });
+}
+
 // Logs viewer (for root)
 function handleLogs(req, res) {
   try {
@@ -2322,8 +2350,8 @@ function handleLogs(req, res) {
     const lines = content.trim().split('\n').filter(l => l).map(l => {
       try { return JSON.parse(l); } catch { return null; }
     }).filter(l => l);
-    // Return last 100 entries
-    const logs = lines.slice(-100);
+    // Return last 100 entries, newest first
+    const logs = lines.slice(-100).reverse();
     sendJSON(res, 200, { logs });
   } catch(e) {
     sendJSON(res, 200, { logs: [], error: e.message });
@@ -2471,6 +2499,18 @@ function handleStats(req, res) {
   // Increment visit counter
   config.visits++;
   config.lastVisit = new Date().toISOString();
+  // Track daily visits
+  const todayKey = new Date().toISOString().substring(0, 10);
+  if (!config.dailyVisits) config.dailyVisits = {};
+  config.dailyVisits[todayKey] = (config.dailyVisits[todayKey] || 0) + 1;
+  // Track recent access (keep last 60)
+  if (!config.recentAccess) config.recentAccess = [];
+  config.recentAccess.unshift({
+    time: new Date().toISOString(),
+    ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+    ua: (req.headers['user-agent'] || '').substring(0, 120)
+  });
+  if (config.recentAccess.length > 60) config.recentAccess.length = 60;
   saveConfig(config);
 
   const notices = readNotices();
@@ -2778,6 +2818,11 @@ const server = http.createServer((req, res) => {
   // Stats: visit counter and notice stats
   if (url.pathname === '/api/stats') {
     if (req.method === 'GET') return handleStats(req, res);
+  }
+
+  // Visit stats: access analytics (admin)
+  if (url.pathname === '/api/visit-stats') {
+    if (req.method === 'GET') return handleVisitStats(req, res);
   }
 
   // Logs: get operation logs (root only)

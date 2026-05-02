@@ -931,6 +931,14 @@
       box-shadow: 0 8px 22px rgba(0,0,0,0.24);
     }
     body.dark-mode .admin-panel .section-title { color: #93c5fd; }
+    body.dark-mode #visitStats > div > div[style*="background:#fff"] { background: #1e2038 !important; }
+    body.dark-mode #visitStats div[style*="color:#333"] { color: #cbd5e1 !important; }
+    body.dark-mode #visitStats div[style*="color:#1d4ed8"] { color: #8bb8ff !important; }
+    body.dark-mode #visitStats div[style*="color:#059669"] { color: #6ee7b7 !important; }
+    body.dark-mode #visitStats div[style*="color:#7c3aed"] { color: #c084fc !important; }
+    body.dark-mode #visitStats div[style*="color:#555"] { color: #aeb8d4 !important; }
+    body.dark-mode #visitStats div[style*="color:#666"] { color: #9aa7bd !important; }
+    body.dark-mode #visitStats div[style*="border-bottom:1px solid #e5e7eb"] { border-color: rgba(148,163,184,0.18) !important; }
     body.dark-mode .add-preview { background: #1a1a2e; border-color: #444; }
     body.dark-mode .preview-title { color: #e0e0e0; }
     body.dark-mode .preview-body-preview { background: #252540; color: #b0b0b0; }
@@ -1841,6 +1849,13 @@
           </div>
         </div>
 
+        <div style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);padding:20px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.05);border:1px solid #6ee7b7;margin-top:16px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:#065f46">📈 访问统计 <button type="button" class="btn btn-secondary btn-sm" onclick="loadVisitStats()" style="margin-left:8px">🔄 刷新</button></div>
+          <div id="visitStats" style="font-size:12px;color:#555">
+            <div style="color:#888;text-align:center;padding:20px">点击"刷新"加载访问统计</div>
+          </div>
+        </div>
+
         <div style="background:linear-gradient(135deg,#fef3c7,#fffbeb);padding:20px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.05);border:1px solid #fcd34d;margin-top:16px">
           <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:#92400e">🤖 AI解析配置 <button type="button" class="btn btn-secondary btn-sm" onclick="loadParserConfig()" style="margin-left:8px">🔄 刷新</button></div>
           <div id="parserConfig">
@@ -2231,6 +2246,58 @@
       }
     };
 
+    // Visit stats
+    window.loadVisitStats = async function() {
+      const el = document.getElementById('visitStats');
+      if (!el) return;
+      el.innerHTML = '<div style="color:#888;text-align:center;padding:20px">加载中...</div>';
+      try {
+        const res = await fetch('/api/visit-stats');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const maxCount = Math.max(1, ...data.dailyVisits.map(d => d.count));
+        el.innerHTML = `
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+            <div style="flex:1;min-width:100px;background:#fff;padding:12px;border-radius:8px;text-align:center">
+              <div style="font-size:24px;font-weight:700;color:#1d4ed8">${data.totalVisits || 0}</div>
+              <div style="font-size:11px;color:#666">累计访问</div>
+            </div>
+            <div style="flex:1;min-width:100px;background:#fff;padding:12px;border-radius:8px;text-align:center">
+              <div style="font-size:24px;font-weight:700;color:#059669">${data.todayVisits || 0}</div>
+              <div style="font-size:11px;color:#666">今日访问</div>
+            </div>
+            <div style="flex:1;min-width:100px;background:#fff;padding:12px;border-radius:8px;text-align:center">
+              <div style="font-size:24px;font-weight:700;color:#7c3aed">${data.thisWeekVisits || 0}</div>
+              <div style="font-size:11px;color:#666">本周访问</div>
+            </div>
+          </div>
+          <div style="font-weight:600;margin-bottom:8px;color:#333">📊 近7天访问趋势</div>
+          <div style="display:flex;align-items:end;gap:4px;height:80px;padding:4px 0;margin-bottom:16px">
+            ${data.dailyVisits?.map(d => {
+              const h = Math.max(4, Math.round((d.count / maxCount) * 72));
+              return `<div style="flex:1;text-align:center" title="${d.date}: ${d.count}次">
+                <div style="background:#3b82f6;height:${h}px;border-radius:3px 3px 0 0;margin:0 2px"></div>
+                <div style="font-size:9px;color:#888;margin-top:2px">${d.date.slice(5)}</div>
+                <div style="font-size:10px;color:#555">${d.count}</div>
+              </div>`;
+            }).join('')}
+          </div>
+          <div style="font-weight:600;margin-bottom:8px;color:#333">🕐 最近访问</div>
+          <div style="max-height:200px;overflow-y:auto;font-size:11px">
+            ${data.recentAccess?.length > 0 ? data.recentAccess.map(r => `
+              <div style="border-bottom:1px solid #e5e7eb;padding:4px 0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px">
+                <span style="color:#3b82f6">${new Date(r.time).toLocaleString('zh-CN')}</span>
+                <span style="color:#888;font-family:monospace">${r.ip || '?'}</span>
+                <span style="color:#aaa;font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(r.ua || '').replace(/Mozilla\/[\d.]+ /,'').replace(/AppleWebKit\/[\d.]+ /,'').replace(/\(KHTML, like Gecko\)/,'')}</span>
+              </div>
+            `).join('') : '<div style="color:#888;text-align:center;padding:10px">暂无记录</div>'}
+          </div>
+        `;
+      } catch(e) {
+        el.innerHTML = '<div style="color:#dc2626;text-align:center;padding:20px">加载失败: ' + e.message + '</div>';
+      }
+    };
+
     // Webhook functions
     window.copyWebhookUrl = function() {
       const url = document.getElementById('webhookUrl').value;
@@ -2332,7 +2399,7 @@
 
       // Info chips
       let chips = '';
-      if (cddl) chips += `<span class="info-chip ${cddl.cls}">${cddl.ico} ${cddl.text}<a href="/api/calendar/${n.id}" title="添加到手机日历" onclick="event.stopPropagation()" class="cal-add-link"> 📅</a></span>`;
+      if (cddl) chips += `<span class="info-chip ${cddl.cls}">${cddl.ico} ${cddl.text}<a href="/api/calendar/${n.id}" title="分享到手机日历" onclick="shareCalendar(event,'${escapeAttr(n.id)}')" class="cal-add-link"> 📅</a></span>`;
       if (n.location) chips += `<span class="info-chip chip-location">📍 ${escapeHtml(n.location)}</span>`;
       if (n.owner && n.owner !== '未指定') chips += `<span class="info-chip chip-owner">👤 ${escapeHtml(n.owner)}</span>`;
       if (n.importance === 3 && urgency) chips += `<span class="info-chip chip-urgent">⚠️ 高优先级</span>`;
@@ -2399,7 +2466,7 @@
             <div class="meta">
               <span class="meta-item">${getTypeIcon(n.type)} ${n.type}</span>
               <span class="meta-item">📅 ${formatDate(n.publishDate)}</span>
-              ${n.deadline ? `<span class="meta-item">⏰ <span class="${ddlClass}">${ddlText}</span><a href="/api/calendar/${n.id}" title="添加到手机日历" onclick="event.stopPropagation()" class="cal-add-link"> 📅</a></span>` : ''}
+              ${n.deadline ? `<span class="meta-item">⏰ <span class="${ddlClass}">${ddlText}</span><a href="/api/calendar/${n.id}" title="分享到手机日历" onclick="shareCalendar(event,'${escapeAttr(n.id)}')" class="cal-add-link"> 📅</a></span>` : ''}
               <span class="meta-item">👤 ${n.owner}</span>
               <span class="note-stars ${n.importance===3?'star-high':n.importance===2?'star-medium':'star-low'}" style="font-size:11px">${renderStars(n.importance)}</span>
               ${n.attachments && n.attachments.length > 0 ? `<span class="meta-item">📎 ${n.attachments.length}</span>` : ''}
@@ -2418,6 +2485,16 @@
     function escapeHtml(str) {
       if (!str) return '';
       return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function escapeAttr(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     // ============ Handlers ============
@@ -2905,6 +2982,49 @@ window.handleLogin = async function() {
           }
         });
       });
+    };
+
+    window.shareCalendar = async function(event, noticeId) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const calendarUrl = `/api/calendar/${encodeURIComponent(noticeId)}`;
+      const absoluteUrl = new URL(calendarUrl, window.location.origin).href;
+      const notice = state.notices.find(n => n.id === noticeId);
+      const safeTitle = notice?.title || '通知截止提醒';
+
+      try {
+        if (navigator.share) {
+          try {
+            const res = await fetch(calendarUrl);
+            if (!res.ok) throw new Error('calendar fetch failed');
+            const blob = await res.blob();
+            const file = new File([blob], `${safeTitle.slice(0, 24)}-截止.ics`, { type: 'text/calendar' });
+
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                title: `${safeTitle} 截止提醒`,
+                text: '添加这条通知的截止日期到手机日历',
+                files: [file],
+              });
+              return;
+            }
+          } catch (e) {
+            console.warn('Calendar file share unavailable, falling back to link share', e);
+          }
+
+          await navigator.share({
+            title: `${safeTitle} 截止提醒`,
+            text: '打开链接下载日历提醒文件',
+            url: absoluteUrl,
+          });
+          return;
+        }
+      } catch (e) {
+        console.warn('System share failed, falling back to download', e);
+      }
+
+      window.location.href = calendarUrl;
     };
 
     // Format text toolbar helper
