@@ -439,7 +439,9 @@ function loadConfig() {
     apiUrl: '',
     model: 'MiniMax-M2.7',
     timeout: 30000,
-    useOnSubmit: false
+    useOnSubmit: false,
+    systemPrompt: '',
+    userPromptTemplate: ''
   };
   return cfg;
 }
@@ -2119,6 +2121,8 @@ async function handleParserConfig(req, res) {
       if (typeof parser.apiKey === 'string' && parser.apiKey !== '***') valid.apiKey = parser.apiKey;
       if (typeof parser.apiUrl === 'string') valid.apiUrl = parser.apiUrl;
       if (typeof parser.model === 'string') valid.model = parser.model;
+      if (typeof parser.systemPrompt === 'string') valid.systemPrompt = parser.systemPrompt;
+      if (typeof parser.userPromptTemplate === 'string') valid.userPromptTemplate = parser.userPromptTemplate;
       if (parser.timeout) valid.timeout = Math.min(Math.max(10000, parseInt(parser.timeout)), 60000);
 
       config.parser = { ...config.parser, ...valid };

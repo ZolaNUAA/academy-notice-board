@@ -1831,6 +1831,14 @@
                 <label style="width:120px;font-size:13px">超时(ms)</label>
                 <input type="number" id="parser_timeout" value="${p.timeout||30000}" min="10000" max="60000" step="5000" style="padding:4px 8px;border:1px solid #ddd;border-radius:6px;width:120px;font-size:12px">
               </div>
+              <div style="margin-top:4px">
+                <label style="font-size:13px;font-weight:500">System Prompt <span style="color:#888;font-weight:400;font-size:11px">(留空=内置默认)</span></label>
+                <textarea id="parser_systemPrompt" rows="2" placeholder="留空=内置默认" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:11px;font-family:monospace;margin-top:2px;resize:vertical">${(p.systemPrompt||'').replace(/</g,'&lt;')}</textarea>
+              </div>
+              <div style="margin-top:4px">
+                <label style="font-size:13px;font-weight:500">User Prompt <span style="color:#888;font-weight:400;font-size:11px">(&#123;&#123;today&#125;&#125;=今天, 留空=内置默认)</span></label>
+                <textarea id="parser_userPrompt" rows="6" placeholder="留空=内置默认" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:11px;font-family:monospace;margin-top:2px;resize:vertical">${(p.userPromptTemplate||'').replace(/</g,'&lt;')}</textarea>
+              </div>
             </div>
             <div style="margin-top:14px;padding:10px;background:#fef9c3;border-radius:8px;font-size:12px;color:#854d0e">
               ⚠️ 修改AI解析配置需要验证超级管理员密码
@@ -1856,7 +1864,9 @@
         apiKey: document.getElementById('parser_apiKey').value,
         apiUrl: document.getElementById('parser_apiUrl').value,
         model: document.getElementById('parser_model').value,
-        timeout: parseInt(document.getElementById('parser_timeout').value)
+        timeout: parseInt(document.getElementById('parser_timeout').value),
+        systemPrompt: document.getElementById('parser_systemPrompt').value,
+        userPromptTemplate: document.getElementById('parser_userPrompt').value
       };
       try {
         const res = await fetch('/api/parser-config', {
