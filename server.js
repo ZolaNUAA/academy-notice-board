@@ -1358,6 +1358,21 @@ function parseNoticeBlock(block, idx) {
   const keyPoints = extractKeyPoints(body);
   const location = extractLocation(body);
   const now = new Date();
+
+  // 从标题/头部提取发布日期：如"4.30-科研-..."、"4.28-教学-..."
+  let publishDate = toISO(now); // 默认今天
+  let cleanTitle = title;
+  const headerDateMatch = block.match(/^【(\d{1,2})[./-](\d{1,2})/);
+  if (headerDateMatch) {
+    const m = parseInt(headerDateMatch[1], 10);
+    const d = parseInt(headerDateMatch[2], 10);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      publishDate = `${now.getFullYear()}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      // 去掉标题中的日期前缀 "4.30-科研-" → "科研-"
+      cleanTitle = title.replace(/^\d{1,2}[.\/-]\d{1,2}\s*[-—–]\s*/, '');
+    }
+  }
+
   const expired = ddl ? ddl < now : false;
 
   // 无截止日期时自动推测：根据重要性给7-30天
@@ -1374,8 +1389,9 @@ function parseNoticeBlock(block, idx) {
     id: `n-${idx}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
     type: cat.name,
     typeClass: `cat-${cat.key}`,
-    title, body,
-    publishDate: toISO(now), // 发布时间始终为粘贴时的当天日期
+    title: cleanTitle,
+    body,
+    publishDate,
     deadline: toISO(finalDdl),
     importance: imp,
     owner, location, links, keyPoints, expired,
