@@ -2374,17 +2374,20 @@ function lookupIPLocation(ip) {
 }
 
 async function enrichRecentAccess(recent) {
-  const enriched = [];
-  for (const r of recent.slice(0, 20)) {
-    enriched.push({
-      time: r.time,
-      ip: r.ip,
-      ua: r.ua,
-      auth: r.auth || 'visitor',
-      location: await lookupIPLocation(r.ip)
-    });
-  }
-  return enriched;
+  // Run all IP lookups in parallel with a 2s individual timeout to avoid blocking
+  const items = recent.slice(0, 20).map(r => ({
+    time: r.time,
+    ip: r.ip,
+    ua: r.ua,
+    auth: r.auth || 'visitor',
+  }));
+  const locations = await Promise.all(items.map(r =>
+    Promise.race([
+      lookupIPLocation(r.ip),
+      new Promise(resolve => setTimeout(() => resolve('超时'), 2000))
+    ])
+  ));
+  return items.map((r, i) => ({ ...r, location: locations[i] }));
 }
 
 // Visit statistics (for admin)
