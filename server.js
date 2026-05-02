@@ -2527,24 +2527,45 @@ function handleCalendarDownload(req, res, id) {
     res.end('Notice not found or has no deadline');
     return;
   }
-  const deadline = new Date(notice.deadline);
-  // Format dates as YYYYMMDD for all-day event
   const pad = n => String(n).padStart(2, '0');
-  const dtStart = `${deadline.getFullYear()}${pad(deadline.getMonth()+1)}${pad(deadline.getDate())}`;
+  const dateMatch = String(notice.deadline).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!dateMatch) {
+    res.writeHead(400, { 'Content-Type': 'text/plain' });
+    res.end('Invalid deadline date');
+    return;
+  }
+
+  const deadline = new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]));
+  const dtStart = `${dateMatch[1]}${dateMatch[2]}${dateMatch[3]}`;
   // End date is the next day (exclusive)
   const nextDay = new Date(deadline);
   nextDay.setDate(nextDay.getDate() + 1);
   const dtEnd = `${nextDay.getFullYear()}${pad(nextDay.getMonth()+1)}${pad(nextDay.getDate())}`;
   // Escape special chars in iCalendar text
-  const esc = s => (s || '').replace(/[\\;,]/g, '\\$&').replace(/\n/g, '\\n').substring(0, 500);
+  const esc = s => (s || '').replace(/[\\;,]/g, '\\$&').replace(/\r?\n/g, '\\n').substring(0, 500);
+  const foldLine = line => {
+    const chunks = [];
+    let current = '';
+    for (const ch of line) {
+      if (Buffer.byteLength(current + ch, 'utf-8') > 70) {
+        chunks.push(current);
+        current = ch;
+      } else {
+        current += ch;
+      }
+    }
+    chunks.push(current);
+    return chunks.map((chunk, idx) => idx === 0 ? chunk : ` ${chunk}`).join('\r\n');
+  };
   const now = new Date().toISOString().replace(/[-:]/g, '').substring(0, 15) + 'Z';
   const summary = `⏰ 截止：${notice.title}`;
   const description = esc((notice.body || '').substring(0, 500));
-  const ics = [
+  const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
     'PRODID:-//Academy Notice Board//Notice Calendar//ZH',
     'BEGIN:VEVENT',
+    `UID:${esc(`${notice.id}@academy-notice-board`)}`,
     `DTSTART;VALUE=DATE:${dtStart}`,
     `DTEND;VALUE=DATE:${dtEnd}`,
     `DTSTAMP:${now}`,
@@ -2553,14 +2574,16 @@ function handleCalendarDownload(req, res, id) {
     'BEGIN:VALARM',
     'ACTION:DISPLAY',
     `DESCRIPTION:提醒：${esc(notice.title)} 今天截止`,
-    'TRIGGER:-P1D', // 1 day before
+    'TRIGGER;RELATED=START:-P1D',
     'END:VALARM',
     'END:VEVENT',
     'END:VCALENDAR'
-  ].join('\r\n');
+  ];
+  const ics = lines.map(foldLine).join('\r\n') + '\r\n';
   res.writeHead(200, {
     'Content-Type': 'text/calendar; charset=utf-8',
-    'Content-Disposition': `attachment; filename="${encodeURIComponent(notice.title.substring(0, 30))}-截止.ics"`
+    'Content-Disposition': `attachment; filename="notice-deadline.ics"; filename*=UTF-8''${encodeURIComponent(`${notice.title.substring(0, 30)}-截止.ics`)}`,
+    'Cache-Control': 'no-store'
   });
   res.end(ics);
 }
