@@ -27,7 +27,13 @@ const DATA_DIR = USE_MNT ? path.join(BASE_DIR, 'data') : path.join(__dirname, 'd
 const DATA_FILE = path.join(DATA_DIR, 'notices.json');
 const CONFIG_FILE = USE_MNT ? path.join(BASE_DIR, 'config.json') : path.join(__dirname, 'config.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const LOG_FILE = path.join(DATA_DIR, 'operation.log');
+
+// Ensure backup directory exists
+try {
+  if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+} catch(e) { console.warn('[Backup] Failed to create backup dir:', e.message); }
 // When deployed on cloud, set BASE_URL to the public URL of the service
 // e.g., https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com
 const BASE_URL = process.env.BASE_URL || 'https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com';
@@ -2454,12 +2460,149 @@ async function handleLimits(req, res) {
 // ============ Backup Version Management (DISABLED) ============
 
 // GitHub备份已禁用 - 数据存储在腾讯云COS
+// ============ Local Snapshot Backup System ============
+
+function createSnapshotBackup() {
+  const notices = readNotices();
+  const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+  // Don't back up sensitive fields
+  delete cfg.parser?.apiKey;
+  delete cfg.webhookSecret;
+
+  const snapshot = {
+    timestamp: new Date().toISOString(),
+    notices,
+    config: cfg,
+  };
+
+  const ts = new Date().toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, '');
+  const filename = `backup-${ts}.json`;
+  const filepath = path.join(BACKUP_DIR, filename);
+
+  fs.writeFileSync(filepath, JSON.stringify(snapshot, null, 2), 'utf-8');
+  console.log(`[Backup] Snapshot created: ${filename} (${notices.length} notices)`);
+
+  // Prune old backups: keep max 30 most recent
+  try {
+    const files = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith('backup-') && f.endsWith('.json'))
+      .sort();
+    while (files.length > 30) {
+      fs.unlinkSync(path.join(BACKUP_DIR, files[0]));
+      files.shift();
+    }
+  } catch(e) { console.warn('[Backup] Prune failed:', e.message); }
+
+  return filename;
+}
+
+function getBackupList() {
+  try {
+    const files = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith('backup-') && f.endsWith('.json'))
+      .sort()
+      .reverse();
+
+    return files.map(f => {
+      const filepath = path.join(BACKUP_DIR, f);
+      try {
+        const stat = fs.statSync(filepath);
+        const data = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
+        return {
+          filename: f,
+          timestamp: data.timestamp || f.replace('backup-', '').replace('.json', ''),
+          noticeCount: Array.isArray(data.notices) ? data.notices.length : 0,
+          hasConfig: !!(data.config && data.config.admins),
+          size: stat.size,
+          mtime: stat.mtime.toISOString(),
+        };
+      } catch { return null; }
+    }).filter(Boolean);
+  } catch(e) {
+    console.warn('[Backup] List failed:', e.message);
+    return [];
+  }
+}
+
+function restoreFromSnapshot(filename) {
+  // Prevent path traversal
+  const safe = path.basename(filename);
+  if (!safe.startsWith('backup-') || !safe.endsWith('.json')) {
+    throw new Error('Invalid backup filename');
+  }
+  const filepath = path.join(BACKUP_DIR, safe);
+  if (!fs.existsSync(filepath)) {
+    throw new Error('Backup not found');
+  }
+
+  const snapshot = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
+  if (!Array.isArray(snapshot.notices)) {
+    throw new Error('Backup data corrupted: missing notices array');
+  }
+
+  // Restore notices
+  fs.writeFileSync(DATA_FILE, JSON.stringify(snapshot.notices, null, 2), 'utf-8');
+
+  // Restore config (merge: keep current admins + restore other config fields)
+  if (snapshot.config && typeof snapshot.config === 'object') {
+    const currentConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+    // Keep current secrets (API keys, webhook secrets)
+    const preserved = {};
+    if (currentConfig.parser?.apiKey) preserved.parserApiKey = currentConfig.parser.apiKey;
+    if (currentConfig.webhookSecret) preserved.webhookSecret = currentConfig.webhookSecret;
+    if (currentConfig.admins) preserved.admins = currentConfig.admins; // keep current admins
+
+    const restored = { ...snapshot.config, ...preserved };
+    // Ensure admins from restore don't overwrite current
+    restored.admins = preserved.admins || snapshot.config.admins;
+
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(restored, null, 2), 'utf-8');
+  }
+
+  logOperation('RESTORE', { filename, notices: snapshot.notices.length });
+  console.log(`[Backup] Restored from ${filename}: ${snapshot.notices.length} notices`);
+  return { noticeCount: snapshot.notices.length };
+}
+
+// Auto-backup every 24 hours
+setInterval(() => {
+  try { createSnapshotBackup(); }
+  catch(e) { console.warn('[Backup] Auto-backup failed:', e.message); }
+}, 24 * 60 * 60 * 1000);
+
+// Create initial backup if no backups exist
+try {
+  const existing = fs.readdirSync(BACKUP_DIR).filter(f => f.startsWith('backup-'));
+  if (existing.length === 0) {
+    setTimeout(() => {
+      try { createSnapshotBackup(); }
+      catch(e) {}
+    }, 5000); // wait for server to settle
+  }
+} catch(e) {}
+
 async function handleBackupVersions(req, res) {
-  return sendJSON(res, 200, { versions: [], message: 'GitHub备份已禁用，数据存储在腾讯云COS' });
+  const list = getBackupList();
+  sendJSON(res, 200, { versions: list });
 }
 
 async function handleBackupRestore(req, res) {
-  return sendJSON(res, 200, { success: false, message: 'GitHub备份已禁用，数据存储在腾讯云COS' });
+  if (req.method !== 'POST') {
+    return sendJSON(res, 405, { error: 'Method not allowed' });
+  }
+
+  try {
+    const body = await parseJSONBody(req);
+    const { filename } = body;
+    if (!filename) {
+      return sendJSON(res, 400, { error: 'Missing backup filename' });
+    }
+
+    const result = restoreFromSnapshot(filename);
+    sendJSON(res, 200, { success: true, ...result });
+  } catch(e) {
+    sendJSON(res, 500, { error: '恢复失败: ' + e.message });
+  }
 }
 
 // Webhook config: get/set webhook secret
@@ -2966,6 +3109,18 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/limits') {
     if (!requireRoot(req, res)) return;
     return handleLimits(req, res);
+  }
+
+  // Create backup snapshot (root only)
+  if (url.pathname === '/api/backup/create') {
+    if (!requireRoot(req, res)) return;
+    try {
+      const filename = createSnapshotBackup();
+      sendJSON(res, 200, { success: true, filename });
+    } catch(e) {
+      sendJSON(res, 500, { error: '创建备份失败: ' + e.message });
+    }
+    return;
   }
 
   // Backup versions (root only)
