@@ -736,18 +736,33 @@ function inferCategory(text) {
 
 // Enhanced importance inference
 function inferImportance(text) {
-  // Check high importance first
+  // 只在前200字符(通知核心区域)里判断重要度
+  const core = text.substring(0, 200);
+
+  // 高重要度：需同时满足2个高优先级关键词，或在开头10字符内有高优先词
+  let highCount = 0;
   for (const kw of IMPORTANCE_KWS.high) {
-    if (text.includes(kw)) return 3;
+    if (core.includes(kw)) highCount++;
+    if (highCount >= 2) return 3;
   }
-  // Check low importance
-  for (const kw of IMPORTANCE_KWS.low) {
-    if (text.includes(kw)) return 1;
-  }
-  // Check medium importance
+  // 开头有强信号：标题或首行含"紧急"、"@所有人"直接高
+  const firstLine = text.split('\n')[0].substring(0, 50);
+  if (/紧急|@所有人|务必|必须|严禁/.test(firstLine)) return 3;
+
+  // 中重要度：至少1个高优先词，或多个中优先词
+  let midCount = 0;
   for (const kw of IMPORTANCE_KWS.medium) {
-    if (text.includes(kw)) return 2;
+    if (core.includes(kw)) midCount++;
+    if (midCount >= 3) return 2;
   }
+  if (highCount >= 1) return 2;
+  if (midCount >= 1) return 2;
+
+  // 检查低重要度
+  for (const kw of IMPORTANCE_KWS.low) {
+    if (core.includes(kw)) return 1;
+  }
+
   return 1;
 }
 
@@ -1032,6 +1047,9 @@ function parseOwner(text) {
     '特此通知','特此公告',
     '以上信息','以上通知','以上内容',
     '没有报名','无需报名',
+    '访问权限','定位权限','位置信息','开启手机','扫码报名',
+    '活动前必须','访问权限','位置信息',
+    '敬请周知','特此周知',
   ]);
 
   // Pattern: 负责人/联系人/对接人：张三
@@ -1074,9 +1092,9 @@ function parseOwner(text) {
     return `电话 ${num}`;
   }
 
-  // WeChat/Tech team contact
-  const wx = text.match(/(?:微信|企微|钉钉|飞书)[:：]?\s*(\S+)/);
-  if (wx && wx[1].length < 30) return wx[1];
+  // WeChat/Tech team contact (只匹配明确的账号格式)
+  const wx = text.match(/(?:微信|企微|钉钉|飞书)[：:]\s*(\S{3,30})/);
+  if (wx && wx[1].length < 30 && !/[权限设置开启必须]{2,}/.test(wx[1]) && !OWNER_BLACKLIST.has(wx[1])) return wx[1];
 
   // Signature line at end (2-4 Chinese chars) — 加黑名单过滤
   const signMatch = text.match(/\n([\u4e00-\u9fa5]{2,4})\s*$/m);
@@ -1136,11 +1154,12 @@ function extractLinks(text) {
 // Extract location from text
 function extractLocation(text) {
   // Pattern 1: 在XXX会议室|报告厅|办公室|教室|实验室
-  const venueMatch = text.match(/(?:在|地点[:：]|于)\s*([^\n，。,；;]{3,40}(?:会议室|报告厅|办公室|教室|实验室|广场|大厅|中心|基地|礼堂|活动室|接待室))/);
+  // "于"前不加"便/对/由/关/属/至/在"等，避免"便于/对于/由于/关于"误匹配
+  const venueMatch = text.match(/(?:在|地点[:：]|(?<![便对由关属至在])于)\s*([^\n，。,；;]{3,40}(?:会议室|报告厅|办公室|教室|实验室|广场|大厅|中心|基地|礼堂|活动室|接待室|橱窗))/);
   if (venueMatch) return venueMatch[1].trim();
 
   // Pattern 2: Building + Room: 学院楼113报告厅, 综合楼612, 515会议室
-  const roomMatch = text.match(/([\u4e00-\u9fa5]{2,8}(?:楼|学院|校区|中心))?\s*(\d{3,4})\s*(?:室|房间|会议室|报告厅|办公室|教室)/);
+  const roomMatch = text.match(/([\u4e00-\u9fa5]{2,8}(?:楼|学院|校区|中心))?\s*(\d{3,4})\s*(?:室|会议室|报告厅|办公室|教室)/);
   if (roomMatch) {
     const building = roomMatch[1] || '';
     return (building + roomMatch[2] + (roomMatch[3] || '室')).trim();
@@ -1154,8 +1173,8 @@ function extractLocation(text) {
   const locLabel = text.match(/(?:地点|位置|地址)[：:]\s*([^\n，。,；;]{3,60})/);
   if (locLabel) return locLabel[1].trim();
 
-  // Pattern 5: 地名+方位: 西大门内、国旗广场、中山陵等
-  const placeMatch = text.match(/(?:在|于|至)\s*([^\n，。,；;]{2,30}(?:广场|公园|门口|大门|厅|处|点|区|路|街|道|园|楼))/);
+  // Pattern 5: 地名+方位 (排除"便/对/由/关/属/至/在"后的"于")
+  const placeMatch = text.match(/(?:在|(?<![便对由关属至在])于|至)\s*([^\n，。,；;]{2,30}(?:广场|公园|门口|大门|签到点|报到处|集合点|接待处|办事大厅|报告厅|会议室|教室|办公室|实验室|活动室|路|街|道|校园|校区|教学楼|行政楼))/);
   if (placeMatch) return placeMatch[1].trim();
 
   return null;
@@ -1163,24 +1182,58 @@ function extractLocation(text) {
 
 function extractKeyPoints(body) {
   const points = [];
-  const lines = body.split('\n').filter(l => l.trim().length > 5 && l.trim().length < 150);
-  const importantKws = ['截止', '请于', '重要', '务必', '必须', '申请', '提交', '完成', '报名', '审核', '确认', '参会', '地点', '时间'];
-  const dateRegex = /(\d+月\d+日|\d+日|\d{1,2}[.\/-]\d{1,2})/;
+  // 过滤纯问候行(长度<15才当问候)、无意义行
+  const GREETING_ONLY = /^(各位老师好|老师好|大家好|各位老师)[！!，,。；;]*$/;
+  let lines = body.split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 4 && l.length < 200 && !GREETING_ONLY.test(l) && !/^\[/.test(l));
+
+  // 如果行数太少(<=2行)但有长行，尝试按。；；分句
+  if (lines.length <= 2 && lines.some(l => l.length > 60)) {
+    const splitLines = [];
+    for (const line of lines) {
+      if (line.length > 60) {
+        // 按中文标点切分并保留
+        const parts = [];
+        let current = '';
+        for (const ch of line) {
+          current += ch;
+          if ('。；；'.includes(ch) && current.trim().length > 5) {
+            parts.push(current.trim());
+            current = '';
+          }
+        }
+        if (current.trim().length > 5) parts.push(current.trim());
+        for (const p of parts) {
+          if (p.length > 5 && p.length < 150) splitLines.push(p);
+        }
+      } else {
+        splitLines.push(line);
+      }
+    }
+    if (splitLines.length > lines.length) lines = splitLines;
+  }
+
+  const importantKws = ['截止', '请于', '务必', '必须', '申请', '提交', '完成', '报名', '审核', '确认', '参会', '地点', '时间'];
+  const dateRegex = /(\d+月\d+日|\d{1,2}[.\/-]\d{1,2})/;
 
   for (const line of lines.slice(0, 10)) {
-    const cleaned = line.replace(/^[\s\d、.。:：•\-–—>]+/, '').trim();
-    if (cleaned.length < 5 || cleaned.length > 120) continue;
+    const cleaned = line.replace(/^[\s\d、.。:：•\-–—>【】\[\]]+/, '').replace(/[抱拳玫瑰庆祝花朵]+/g, '').trim();
+    if (cleaned.length < 5 || cleaned.length > 180) continue;
+    // 只过滤纯问候的短行
+    if (cleaned.length < 15 && GREETING_ONLY.test(cleaned)) continue;
 
-    // 优先提取包含关键词或日期的行
     let isKey = false;
     for (const kw of importantKws) {
       if (cleaned.includes(kw)) { isKey = true; break; }
     }
     if (!isKey && dateRegex.test(cleaned)) isKey = true;
+    if (!isKey && /^(?:请|需|应|如|可|欢迎)/.test(cleaned)) isKey = true;
 
-    // 前3条是关键行，放宽条件
     if (isKey || points.length < 3) {
-      if (!points.includes(cleaned)) points.push(cleaned);
+      if (!cleaned.startsWith('http') && !points.includes(cleaned)) {
+        points.push(cleaned);
+      }
     }
     if (points.length >= 5) break;
   }
