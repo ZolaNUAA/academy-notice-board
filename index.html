@@ -2956,6 +2956,7 @@ window.handleLogin = async function() {
       if (verifyRes.ok && verifyData.success) {
         state.verified = true;
         render();
+        fetchStats(); // record authenticated visit
       } else {
         alert(verifyData.error || '验证码错误');
       }

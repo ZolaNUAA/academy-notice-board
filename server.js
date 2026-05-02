@@ -1701,12 +1701,26 @@ function handleLogout(req, res) {
 }
 
 // ============ Verify Code ============
+// Visitor token management (for tracking verified visitors in recentAccess)
+const VISITOR_TOKEN_TTL = 8 * 60 * 60 * 1000; // 8h
+const visitorTokens = new Map(); // token -> expiresAt
+
 async function handleVerify(req, res) {
   try {
     const { code } = await parseJSONBody(req);
     if (!code) return sendJSON(res, 400, { error: 'code required' });
     if (code === VERIFY_CODE) {
-      sendJSON(res, 200, { success: true });
+      // Issue visitor token so server can distinguish verified visitors from unauthenticated hits
+      const token = crypto.randomBytes(16).toString('hex');
+      visitorTokens.set(token, Date.now() + VISITOR_TOKEN_TTL);
+      const maxAge = Math.floor(VISITOR_TOKEN_TTL / 1000);
+      const secure = isHttps(req);
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Set-Cookie': `anb_visitor=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure ? '; Secure' : ''}`
+      });
+      res.end(JSON.stringify({ success: true }));
+      return;
     } else {
       sendJSON(res, 401, { error: '验证码错误' });
     }
@@ -1714,6 +1728,14 @@ async function handleVerify(req, res) {
     sendJSON(res, 500, { error: 'Verify error' });
   }
 }
+
+// Clean up expired visitor tokens every 30 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, expires] of visitorTokens) {
+    if (expires <= now) visitorTokens.delete(token);
+  }
+}, 30 * 60 * 1000);
 
 async function handleChangePassword(req, res) {
   try {
@@ -2700,29 +2722,41 @@ function fetchLatestCommit() {
 setTimeout(fetchLatestCommit, 100);
 
 function handleStats(req, res) {
-  // Increment visit counter
+  // Always increment visit counters (aggregate stats)
   config.visits++;
   config.lastVisit = new Date().toISOString();
-  // Track daily visits
   const todayKey = new Date().toISOString().substring(0, 10);
   if (!config.dailyVisits) config.dailyVisits = {};
   config.dailyVisits[todayKey] = (config.dailyVisits[todayKey] || 0) + 1;
-  // Track recent access (keep last 60)
-  // Detect auth type from session cookie
-  let auth = 'visitor';
+
+  // Only record in recentAccess if authenticated (admin session or visitor token)
+  let auth = null;
   const admin = getSessionAdmin(req);
   if (admin) {
     auth = admin.role === 'root' ? 'root' : 'admin';
+  } else {
+    // Check visitor token
+    const cookies = parseCookies(req);
+    const visitorToken = cookies['anb_visitor'];
+    if (visitorToken && visitorTokens.has(visitorToken)) {
+      if (visitorTokens.get(visitorToken) > Date.now()) {
+        auth = 'visitor';
+      } else {
+        visitorTokens.delete(visitorToken);
+      }
+    }
   }
 
-  if (!config.recentAccess) config.recentAccess = [];
-  config.recentAccess.unshift({
-    time: new Date().toISOString(),
-    ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
-    ua: (req.headers['user-agent'] || '').substring(0, 120),
-    auth
-  });
-  if (config.recentAccess.length > 60) config.recentAccess.length = 60;
+  if (auth) {
+    if (!config.recentAccess) config.recentAccess = [];
+    config.recentAccess.unshift({
+      time: new Date().toISOString(),
+      ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+      ua: (req.headers['user-agent'] || '').substring(0, 120),
+      auth
+    });
+    if (config.recentAccess.length > 60) config.recentAccess.length = 60;
+  }
   saveConfig(config);
 
   const notices = readNotices();
