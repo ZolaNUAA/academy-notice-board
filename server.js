@@ -2642,87 +2642,53 @@ function handleCalendarDownload(req, res, id) {
   nextDay.setDate(nextDay.getDate() + 1);
   const dtEnd = `${nextDay.getFullYear()}${pad(nextDay.getMonth()+1)}${pad(nextDay.getDate())}`;
 
-  // Clean body: strip HTML tags, decode entities, remove markdown
-  const cleanBody = (notice.body || '')
-    .replace(/<[^>]+>/g, '')           // strip HTML tags
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/!\[[^\]]*\]\([^)]+\)/g, '') // strip markdown images
-    .replace(/!\[[^\]]*\]\[[^\]]*\]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .substring(0, 400);
-
-  // iCalendar text escape: \ → \\, ; → \;, , → \,, newline → \n
+  // iCalendar text value escape
   const escICal = s => String(s)
     .replace(/\\/g, '\\\\')
     .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
-    .replace(/\r?\n/g, '\\n')
-    .substring(0, 600);
+    .replace(/\r?\n/g, '\\n');
 
-  // Safe line fold: only fold at character boundaries, never inside multi-byte UTF-8
-  // and never inside escape sequences. Max 70 octets per line per RFC 5545.
-  const foldLine = (line) => {
-    const maxLen = 70;
-    if (Buffer.byteLength(line, 'utf-8') <= maxLen) return line;
-    const parts = [];
-    let cur = '';
-    let byteLen = 0;
-    for (const ch of line) {
-      const chBytes = Buffer.byteLength(ch, 'utf-8');
-      if (byteLen + chBytes > maxLen && cur.length > 0) {
-        parts.push(cur);
-        cur = ch;
-        byteLen = chBytes;
-      } else {
-        cur += ch;
-        byteLen += chBytes;
-      }
-    }
-    if (cur) parts.push(cur);
-    return parts.map((p, i) => i === 0 ? p : ' ' + p).join('\r\n');
-  };
+  // Clean body: strip HTML, entities, markdown. Keep it short to avoid line-length issues.
+  const cleanBody = (notice.body || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&[a-z]+;/g, '')
+    .replace(/&#\d+;/g, '')
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 200);
 
   const now = new Date().toISOString().replace(/[-:]/g, '').substring(0, 15) + 'Z';
-  const summary = `⏰ 截止：${notice.title}`;
+  const title = notice.title || '';
   const description = escICal(cleanBody);
 
-  // Build iCalendar lines — only fold DATA lines, not structural ones
-  const structLines = [
+  // Build ICS — minimal, no line folding (modern clients handle longer lines fine)
+  const ics = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Academy Notice Board//Notice Calendar//ZH',
+    'PRODID:-//Academy Notice Board//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
     'BEGIN:VEVENT',
-    `UID:${notice.id}@academy-notice-board`,
+    `UID:${notice.id}@nuaa-notice`,
     `DTSTART;VALUE=DATE:${dtStart}`,
     `DTEND;VALUE=DATE:${dtEnd}`,
     `DTSTAMP:${now}`,
-  ];
-  const dataLines = [
-    `SUMMARY:${escICal(summary)}`,
-    `DESCRIPTION:${description}`,
+    `SUMMARY:${escICal(title)}`,
+    description ? `DESCRIPTION:${description}` : null,
     'BEGIN:VALARM',
+    'TRIGGER:-PT12H',
     'ACTION:DISPLAY',
-    `DESCRIPTION:提醒：${escICal(notice.title)} 今天截止`,
-    'TRIGGER;RELATED=START:-P1D',
+    `DESCRIPTION:${escICal(title)}`,
     'END:VALARM',
     'END:VEVENT',
     'END:VCALENDAR'
-  ];
-
-  const ics = [
-    ...structLines,
-    ...dataLines.map(foldLine)
-  ].join('\r\n') + '\r\n';
+  ].filter(Boolean).join('\r\n') + '\r\n';
 
   res.writeHead(200, {
     'Content-Type': 'text/calendar; charset=utf-8',
-    'Content-Disposition': `attachment; filename="notice-deadline.ics"; filename*=UTF-8''${encodeURIComponent(`${notice.title.substring(0, 30)}-截止.ics`)}`,
-    'Cache-Control': 'no-store'
+    'Content-Disposition': 'attachment; filename="notice.ics"'
   });
   res.end(ics);
 }
