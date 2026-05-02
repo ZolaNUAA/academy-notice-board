@@ -2635,51 +2635,90 @@ function handleCalendarDownload(req, res, id) {
     return;
   }
 
-  const deadline = new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]));
   const dtStart = `${dateMatch[1]}${dateMatch[2]}${dateMatch[3]}`;
   // End date is the next day (exclusive)
+  const deadline = new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]));
   const nextDay = new Date(deadline);
   nextDay.setDate(nextDay.getDate() + 1);
   const dtEnd = `${nextDay.getFullYear()}${pad(nextDay.getMonth()+1)}${pad(nextDay.getDate())}`;
-  // Escape special chars in iCalendar text
-  const esc = s => (s || '').replace(/[\\;,]/g, '\\$&').replace(/\r?\n/g, '\\n').substring(0, 500);
-  const foldLine = line => {
-    const chunks = [];
-    let current = '';
+
+  // Clean body: strip HTML tags, decode entities, remove markdown
+  const cleanBody = (notice.body || '')
+    .replace(/<[^>]+>/g, '')           // strip HTML tags
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, '') // strip markdown images
+    .replace(/!\[[^\]]*\]\[[^\]]*\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 400);
+
+  // iCalendar text escape: \ → \\, ; → \;, , → \,, newline → \n
+  const escICal = s => String(s)
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n')
+    .substring(0, 600);
+
+  // Safe line fold: only fold at character boundaries, never inside multi-byte UTF-8
+  // and never inside escape sequences. Max 70 octets per line per RFC 5545.
+  const foldLine = (line) => {
+    const maxLen = 70;
+    if (Buffer.byteLength(line, 'utf-8') <= maxLen) return line;
+    const parts = [];
+    let cur = '';
+    let byteLen = 0;
     for (const ch of line) {
-      if (Buffer.byteLength(current + ch, 'utf-8') > 70) {
-        chunks.push(current);
-        current = ch;
+      const chBytes = Buffer.byteLength(ch, 'utf-8');
+      if (byteLen + chBytes > maxLen && cur.length > 0) {
+        parts.push(cur);
+        cur = ch;
+        byteLen = chBytes;
       } else {
-        current += ch;
+        cur += ch;
+        byteLen += chBytes;
       }
     }
-    chunks.push(current);
-    return chunks.map((chunk, idx) => idx === 0 ? chunk : ` ${chunk}`).join('\r\n');
+    if (cur) parts.push(cur);
+    return parts.map((p, i) => i === 0 ? p : ' ' + p).join('\r\n');
   };
+
   const now = new Date().toISOString().replace(/[-:]/g, '').substring(0, 15) + 'Z';
   const summary = `⏰ 截止：${notice.title}`;
-  const description = esc((notice.body || '').substring(0, 500));
-  const lines = [
+  const description = escICal(cleanBody);
+
+  // Build iCalendar lines — only fold DATA lines, not structural ones
+  const structLines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
     'PRODID:-//Academy Notice Board//Notice Calendar//ZH',
     'BEGIN:VEVENT',
-    `UID:${esc(`${notice.id}@academy-notice-board`)}`,
+    `UID:${notice.id}@academy-notice-board`,
     `DTSTART;VALUE=DATE:${dtStart}`,
     `DTEND;VALUE=DATE:${dtEnd}`,
     `DTSTAMP:${now}`,
-    `SUMMARY:${esc(summary)}`,
+  ];
+  const dataLines = [
+    `SUMMARY:${escICal(summary)}`,
     `DESCRIPTION:${description}`,
     'BEGIN:VALARM',
     'ACTION:DISPLAY',
-    `DESCRIPTION:提醒：${esc(notice.title)} 今天截止`,
+    `DESCRIPTION:提醒：${escICal(notice.title)} 今天截止`,
     'TRIGGER;RELATED=START:-P1D',
     'END:VALARM',
     'END:VEVENT',
     'END:VCALENDAR'
   ];
-  const ics = lines.map(foldLine).join('\r\n') + '\r\n';
+
+  const ics = [
+    ...structLines,
+    ...dataLines.map(foldLine)
+  ].join('\r\n') + '\r\n';
+
   res.writeHead(200, {
     'Content-Type': 'text/calendar; charset=utf-8',
     'Content-Disposition': `attachment; filename="notice-deadline.ics"; filename*=UTF-8''${encodeURIComponent(`${notice.title.substring(0, 30)}-截止.ics`)}`,
