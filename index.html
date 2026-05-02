@@ -127,6 +127,19 @@
     @media (max-width: 900px) { .board { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 550px) { .board { grid-template-columns: 1fr; } }
 
+    /* Back to top button */
+    #backToTop {
+      position: fixed; bottom: 24px; right: 24px; z-index: 1000;
+      width: 44px; height: 44px; border-radius: 50%;
+      background: #1f2937; color: #fff; border: none;
+      font-size: 20px; cursor: pointer; opacity: 0;
+      transform: translateY(10px); transition: opacity 0.3s, transform 0.3s;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #backToTop.visible { opacity: 0.85; transform: translateY(0); }
+    #backToTop:hover { opacity: 1; background: #374151; }
+
     /* Sticky Note */
     .sticky-note {
       padding: 16px;
@@ -2928,6 +2941,11 @@ window.handleLogin = async function() {
       document.body.classList.toggle('dark-mode', state.darkMode);
       render();
     };
+    // Back to top button visibility
+    window.addEventListener('scroll', function() {
+      document.getElementById('backToTop')?.classList.toggle('visible', window.scrollY > 400);
+    });
   </script>
-</body>
+<button id="backToTop" title="回到顶部" onclick="window.scrollTo({top:0,behavior:'smooth'})">&#9650;</button>
+  </body>
 </html>
