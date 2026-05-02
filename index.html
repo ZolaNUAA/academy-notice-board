@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>学院通知便利贴看板</title>
+  <title>石榴院通知看板</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -431,6 +431,21 @@
     .login-box input:focus { border-color: #5d8cff; box-shadow: 0 0 0 3px rgba(93,140,255,0.15); }
     .login-box button { width: 100%; padding: 14px; font-size: 16px; }
 
+    /* Highlight animation for navigated notice card */
+    @keyframes noticeHighlight {
+      0% { box-shadow: 0 0 0 4px rgba(251,191,36,0.6); transform: scale(1.02); }
+      50% { box-shadow: 0 0 0 8px rgba(251,191,36,0.2); transform: scale(1.01); }
+      100% { box-shadow: 0 2px 12px rgba(0,0,0,0.08); transform: scale(1); }
+    }
+    .sticky-note.highlight-notice {
+      animation: noticeHighlight 0.6s ease-out 3;
+      z-index: 10;
+      position: relative;
+    }
+    body.dark-mode .sticky-note.highlight-notice {
+      animation: noticeHighlight 0.6s ease-out 3;
+    }
+
     /* Admin List View */
     .notice-list { display: flex; flex-direction: column; gap: 10px; }
     .notice-list-item {
@@ -441,9 +456,9 @@
       display: flex;
       align-items: flex-start;
       gap: 14px;
-      transition: box-shadow 0.2s;
+      transition: box-shadow 0.2s, transform 0.15s;
     }
-    .notice-list-item:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+    .notice-list-item:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); transform: translateY(-1px); }
     .notice-list-item .cat-dot {
       width: 12px;
       height: 12px;
@@ -1294,7 +1309,7 @@
         root.innerHTML = `
           <div class="verify-screen">
             <div class="verify-box">
-              <h1>🏫 学院通知便利贴看板</h1>
+              <h1>🏫 石榴院通知看板</h1>
               <p>请输入访问验证码</p>
               <input type="password" id="verifyCodeInput" placeholder="输入验证码" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin:16px 0;font-size:16px" onkeydown="if(event.key==='Enter')handleVerify()">
               <button type="button" class="btn btn-primary" style="width:100%;padding:12px;font-size:16px" onclick="handleVerify()">验证</button>
@@ -1314,7 +1329,7 @@
           <header class="header${state.isAdmin ? ' admin' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start">
               <div>
-                <h1>🏫 学院通知便利贴看板</h1>
+                <h1>🏫 石榴院通知看板</h1>
                 <p>${state.isAdmin ? (state.adminRole === 'root' ? '👑 超级管理员' : '⚡ 管理员') + ' · ' + state.adminUsername + ' · ' : '欢迎访问 · '}已收录 ${state.notices.length} 条通知</p>
               </div>
               ${state.stats?.version ? `<div style="font-size:11px;color:#888;text-align:right;line-height:1.5">
@@ -1530,12 +1545,20 @@
                         const icon = iconMap[ext.toLowerCase()] || '📎';
                         return `<span class="attachment-tag"><a href="${a.url}" target="_blank" class="attachment-link">${icon} ${escapeHtml(a.name || '文件')}</a><span class="attachment-remove" onclick="removeEditAttachment(${i})">✕</span></span>`;
                       }).join('')}
+                      <div id="editPendingFiles" style="margin-top:6px"></div>
                     </div>
                   </div>
-                ` : ''}
+                ` : '<div id="editPendingFiles" style="margin-bottom:6px"></div>'}
+                <div class="file-upload-area" style="margin-bottom:12px">
+                  <input type="file" id="editFiles" multiple onchange="handleEditFilesChange(this.files)">
+                  <label for="editFiles" class="file-upload-label" style="font-size:12px;padding:6px 12px">
+                    <span>📎 添加附件/图片</span>
+                  </label>
+                  <span style="font-size:11px;color:#888;margin-left:6px">也可在正文框Ctrl+V粘贴图片</span>
+                </div>
                 <div class="form-group">
                   <label>正文</label>
-                  <textarea id="editBody" rows="6">${escapeHtml(state.editingNotice.body)}</textarea>
+                  <textarea id="editBody" rows="6" onpaste="handleEditPaste(event)">${escapeHtml(state.editingNotice.body)}</textarea>
                 </div>
               </div>
               <div class="modal-actions">
@@ -2182,7 +2205,7 @@
       if (n.importance === 3 && urgency) chips += `<span class="info-chip chip-urgent">⚠️ 高优先级</span>`;
 
       return `
-        <div class="sticky-note ${catClass} ${n.expired?'expired':''}">
+        <div class="sticky-note ${catClass} ${n.expired?'expired':''}" data-notice-id="${n.id}">
           ${urgency ? `<div class="urgency-strip ${urgency}"></div>` : ''}
           <div class="pin"></div>
           <div class="note-top">
@@ -2236,7 +2259,7 @@
       const ddlText = getDDLText(n.deadline, n.expired);
 
       return `
-        <div class="notice-list-item">
+        <div class="notice-list-item" onclick="navigateToNotice('${n.id}')" style="cursor:pointer">
           <div class="cat-dot" style="background:${getCatDotColor(getCatClass(n.type))}"></div>
           <div class="info">
             <div class="title">${escapeHtml(n.title)}</div>
@@ -2251,8 +2274,8 @@
           </div>
           ${state.isAdmin ? `
             <div class="actions">
-              <button type="button" class="btn btn-secondary btn-sm" onclick="handleEdit('${n.id}')">编辑</button>
-              <button type="button" class="btn btn-danger btn-sm" onclick="deleteNotice('${n.id}')">删除</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation();handleEdit('${n.id}')">编辑</button>
+              <button type="button" class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteNotice('${n.id}')">删除</button>
             </div>
           ` : ''}
         </div>
@@ -2719,6 +2742,23 @@ window.handleLogin = async function() {
       render();
     };
 
+    window.navigateToNotice = async function(noticeId) {
+      state.selectedType = 'all';
+      state.viewMode = 'sticky';
+      await fetchNotices();
+      // Double rAF to ensure browser has painted the new DOM
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = document.querySelector(`[data-notice-id="${CSS.escape(noticeId)}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('highlight-notice');
+            setTimeout(() => el.classList.remove('highlight-notice'), 3000);
+          }
+        });
+      });
+    };
+
     window.handleEdit = function(id) {
       const notice = state.notices.find(n => n.id === id);
       if (!notice) return;
@@ -2729,6 +2769,7 @@ window.handleLogin = async function() {
 
     window.handleSaveEdit = async function() {
       const id = state.editingNotice.id;
+      const newBody = document.getElementById('editBody').value;
       const updates = {
         title: document.getElementById('editTitle').value,
         type: document.getElementById('editType').value,
@@ -2736,18 +2777,86 @@ window.handleLogin = async function() {
         publishDate: document.getElementById('editPublishDate').value || null,
         deadline: document.getElementById('editDeadline').value || null,
         owner: document.getElementById('editOwner').value,
-        body: document.getElementById('editBody').value,
+        body: newBody,
       };
-      // 如果有附件删除操作，同步更新
-      if (state._removedAttachmentIndices) {
+
+      // Upload pending edit files
+      if (state._editPendingFiles && state._editPendingFiles.length > 0) {
+        let bodyExtras = '';
+        const newAttachments = [];
+        for (const pf of state._editPendingFiles) {
+          try {
+            const formData = new FormData();
+            formData.append('image', pf.file);
+            const endpoint = pf.isImage ? '/api/image' : '/api/notices';
+            const res = await fetch(endpoint, { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.url) {
+              if (pf.isImage) {
+                bodyExtras += '\n' + `![${data.name}](${data.url})`;
+              }
+              newAttachments.push({ name: pf.file.name, savedName: data.name, url: data.url, size: data.size });
+            }
+          } catch(e) { console.error('Upload failed:', e); }
+        }
+        if (bodyExtras) updates.body = newBody + bodyExtras;
+        if (newAttachments.length > 0) {
+          const existing = (state.editingNotice.attachments || []).filter((_, i) => !(state._removedAttachmentIndices && state._removedAttachmentIndices.has(i)));
+          updates.attachments = [...existing, ...newAttachments];
+        }
+        state._editPendingFiles = [];
+        delete state._removedAttachmentIndices;
+      } else if (state._removedAttachmentIndices) {
         const remaining = state.editingNotice.attachments.filter((_, i) => !state._removedAttachmentIndices.has(i));
-        if (remaining.length > 0) updates.attachments = remaining;
-        else updates.attachments = [];
+        updates.attachments = remaining.length > 0 ? remaining : [];
         delete state._removedAttachmentIndices;
       }
+
       await updateNotice(id, updates);
       state.showEditModal = false;
       state.editingNotice = null;
+    };
+
+    window.handleEditFilesChange = function(files) {
+      state._editPendingFiles = Array.from(files).map(f => ({
+        file: f,
+        name: f.name,
+        isImage: f.type.startsWith('image/'),
+        size: f.size
+      }));
+      const container = document.getElementById('editPendingFiles');
+      if (container) {
+        container.innerHTML = state._editPendingFiles.map((pf, i) => `
+          <span class="attachment-tag" style="opacity:0.8">
+            ${pf.isImage ? '🖼️' : getFileIcon(pf.name)} ${pf.name} (${formatFileSize(pf.size)}) — 待上传
+          </span>
+        `).join('');
+      }
+    };
+
+    window.handleEditPaste = async function(e) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (!file) continue;
+          // Upload immediately for paste in edit
+          try {
+            const formData = new FormData();
+            formData.append('image', file);
+            const res = await fetch('/api/image', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.url) {
+              const ta = document.getElementById('editBody');
+              ta.value += '\n' + `![${data.name}](${data.url})`;
+              updateBodyPreview();
+            }
+          } catch(err) { alert('图片上传失败：' + err.message); }
+          break;
+        }
+      }
     };
 
     window.removeEditAttachment = function(idx) {
