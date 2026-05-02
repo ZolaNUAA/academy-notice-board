@@ -1607,6 +1607,13 @@
             <div style="color:#888;text-align:center;padding:20px">点击"刷新"加载系统参数</div>
           </div>
         </div>
+
+        <div style="background:linear-gradient(135deg,#fef3c7,#fffbeb);padding:20px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.05);border:1px solid #fcd34d;margin-top:16px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:#92400e">🤖 AI解析配置 <button type="button" class="btn btn-secondary btn-sm" onclick="loadParserConfig()" style="margin-left:8px">🔄 刷新</button></div>
+          <div id="parserConfig">
+            <div style="color:#888;text-align:center;padding:20px">点击"刷新"加载AI解析配置</div>
+          </div>
+        </div>
         ` : ''}
       `;
     }
@@ -1770,6 +1777,98 @@
         if (data.success) {
           alert('✅ 系统参数保存成功！');
           document.getElementById('limitsRootPwd').value = '';
+        } else {
+          alert(data.error || '保存失败');
+        }
+      } catch(e) {
+        alert('保存失败：' + e.message);
+      }
+    }
+
+    // ============ AI Parser Config ============
+    async function loadParserConfig() {
+      try {
+        const res = await fetch('/api/parser-config');
+        const data = await res.json();
+        if (data.parser) {
+          const p = data.parser;
+          document.getElementById('parserConfig').innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="width:120px;font-size:13px">启用AI解析</label>
+                <input type="checkbox" id="parser_enabled" ${p.enabled?'checked':''} style="width:18px;height:18px">
+                <span style="font-size:11px;color:#888">开启后可在粘贴预览中使用AI解析</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="width:120px;font-size:13px">提交自动AI</label>
+                <input type="checkbox" id="parser_useOnSubmit" ${p.useOnSubmit?'checked':''} style="width:18px;height:18px">
+                <span style="font-size:11px;color:#888">提交和Webhook也使用AI（增加API成本）</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="width:120px;font-size:13px">服务商</label>
+                <select id="parser_provider" style="padding:4px 8px;border:1px solid #ddd;border-radius:6px">
+                  <option value="minimax" ${p.provider==='minimax'?'selected':''}>MiniMax</option>
+                  <option value="openrouter" ${p.provider==='openrouter'?'selected':''}>OpenRouter</option>
+                  <option value="deepseek" ${p.provider==='deepseek'?'selected':''}>DeepSeek</option>
+                  <option value="openai" ${p.provider==='openai'?'selected':''}>OpenAI兼容</option>
+                  <option value="anthropic" ${p.provider==='anthropic'?'selected':''}>Anthropic兼容</option>
+                </select>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="width:120px;font-size:13px">API Key</label>
+                <input type="password" id="parser_apiKey" value="${p.apiKey||''}" placeholder="sk-..." style="flex:1;padding:4px 8px;border:1px solid #ddd;border-radius:6px;max-width:360px;font-size:12px">
+                <span style="font-size:11px;color:#888">${p.apiKey?'(已设置)':'(未设置)'}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="width:120px;font-size:13px">API地址</label>
+                <input type="text" id="parser_apiUrl" value="${p.apiUrl||''}" placeholder="留空使用默认" style="flex:1;padding:4px 8px;border:1px solid #ddd;border-radius:6px;max-width:360px;font-size:12px">
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="width:120px;font-size:13px">模型</label>
+                <input type="text" id="parser_model" value="${p.model||'MiniMax-M2.7'}" style="padding:4px 8px;border:1px solid #ddd;border-radius:6px;width:200px;font-size:12px">
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="width:120px;font-size:13px">超时(ms)</label>
+                <input type="number" id="parser_timeout" value="${p.timeout||30000}" min="10000" max="60000" step="5000" style="padding:4px 8px;border:1px solid #ddd;border-radius:6px;width:120px;font-size:12px">
+              </div>
+            </div>
+            <div style="margin-top:14px;padding:10px;background:#fef9c3;border-radius:8px;font-size:12px;color:#854d0e">
+              ⚠️ 修改AI解析配置需要验证超级管理员密码
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+              <input type="password" id="parserRootPwd" placeholder="超级管理员密码" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;width:150px;font-size:13px">
+              <button type="button" class="btn btn-primary btn-sm" onclick="handleSaveParserConfig()">💾 保存</button>
+            </div>
+          `;
+        }
+      } catch(e) {
+        document.getElementById('parserConfig').innerHTML = '<div style="color:#dc2626;text-align:center;padding:20px">加载失败: ' + e.message + '</div>';
+      }
+    }
+
+    async function handleSaveParserConfig() {
+      const rootPwd = document.getElementById('parserRootPwd').value;
+      if (!rootPwd) { alert('请填写超级管理员密码'); return; }
+      const parser = {
+        enabled: document.getElementById('parser_enabled').checked,
+        useOnSubmit: document.getElementById('parser_useOnSubmit').checked,
+        provider: document.getElementById('parser_provider').value,
+        apiKey: document.getElementById('parser_apiKey').value,
+        apiUrl: document.getElementById('parser_apiUrl').value,
+        model: document.getElementById('parser_model').value,
+        timeout: parseInt(document.getElementById('parser_timeout').value)
+      };
+      try {
+        const res = await fetch('/api/parser-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ oldPassword: rootPwd, parser })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('✅ AI解析配置保存成功！');
+          document.getElementById('parserRootPwd').value = '';
+          loadParserConfig();
         } else {
           alert(data.error || '保存失败');
         }
@@ -2192,6 +2291,10 @@
                 </div>
               ` : ''}
             </div>
+            <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="handleAIParse()" id="aiParseBtn">🤖 AI智能解析</button>
+              <span style="font-size:11px;color:#888" id="aiParseStatus"></span>
+            </div>
           `;
         } else {
           container.innerHTML = '';
@@ -2199,6 +2302,79 @@
       } catch(e) {
         container.innerHTML = '';
         state.addPreview = null;
+      }
+    };
+
+    window.handleAIParse = async function() {
+      const textarea = document.getElementById('addTextarea');
+      const btn = document.getElementById('aiParseBtn');
+      const status = document.getElementById('aiParseStatus');
+      if (!textarea || !btn) return;
+      const text = textarea.value;
+      if (!text.trim()) return;
+
+      btn.disabled = true;
+      btn.textContent = '⏳ 解析中...';
+      if (status) { status.textContent = '正在调用AI，约需5-15秒...'; status.style.color = '#888'; }
+
+      try {
+        const res = await fetch('/api/parse/llm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        if (data.notices && data.notices.length > 0) {
+          state.addPreview = data.notices[0];
+          // Re-render preview by calling handleAddInput which rebuilds the form
+          // We need to temporarily bypass the API call
+          const container = document.getElementById('previewContainer');
+          if (container && state.addPreview) {
+            const preview = state.addPreview;
+            const diag = preview._diagnostics || {};
+            const warnIcon = diag.confidence === 'low' ? '⚠️' : diag.confidence === 'medium' ? '💡' : '✅';
+            const warnTitle = diag.confidence === 'low' ? '解析结果置信度较低，请检查' :
+                              diag.confidence === 'medium' ? '部分字段可能需要确认' : '解析结果看起来正常';
+            const warnStyle = diag.confidence === 'low' ? 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca' :
+                              diag.confidence === 'medium' ? 'background:#fffbeb;color:#d97706;border:1px solid #fde68a' :
+                              'background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0';
+            const sourceTag = preview._source === 'llm' ? ' (AI解析)' : '';
+            const warningsHtml = (diag.warnings && diag.warnings.length > 0) ? `
+              <div style="margin-top:6px;font-size:12px;line-height:1.6">${diag.warnings.map(w => `<div>• ${w}</div>`).join('')}</div>` : '';
+            container.innerHTML = `
+              <div class="add-preview edit-form">
+                <div style="padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;${warnStyle}">
+                  <strong>${warnIcon} ${warnTitle}${sourceTag}</strong>${warningsHtml}
+                </div>
+                <div class="edit-row">
+                  <div class="edit-field" style="flex:2"><label>标题</label><input type="text" id="editTitle" value="${escapeHtml(preview.title)}" oninput="updatePreviewField('title', this.value)"></div>
+                  <div class="edit-field"><label>类型</label><select id="editType" onchange="updatePreviewField('type', this.value)">${['科研','教学','研究生','学工','党务','人事','保密','国资','安全','国合','全院','其他'].map(t => `<option value="${t}" ${preview.type===t?'selected':''}>${t}</option>`).join('')}</select></div>
+                  <div class="edit-field"><label>重要性</label><select id="editImportance" onchange="updatePreviewField('importance', parseInt(this.value))"><option value="1" ${preview.importance===1?'selected':''}>⭐ 低</option><option value="2" ${preview.importance===2?'selected':''}>⭐⭐ 中</option><option value="3" ${preview.importance===3?'selected':''}>⭐⭐⭐ 高</option></select></div>
+                </div>
+                <div class="edit-row">
+                  <div class="edit-field"><label>发布时间</label><input type="date" id="editPublishDate" value="${preview.publishDate || ''}" oninput="updatePreviewField('publishDate', this.value)"></div>
+                  <div class="edit-field"><label>截止日期</label><input type="date" id="editDeadline" value="${preview.deadline || ''}" oninput="updatePreviewField('deadline', this.value)"></div>
+                  <div class="edit-field" style="flex:2"><label>负责人</label><input type="text" id="editOwner" value="${escapeHtml(preview.owner)}" oninput="updatePreviewField('owner', this.value)"></div>
+                </div>
+                <div class="edit-field" style="flex:1"><label>关键信息提取</label><textarea id="editKeyPoints" rows="2" placeholder="每行一条关键信息" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${((preview.keyPoints && preview.keyPoints.length > 0) ? preview.keyPoints : []).join('\n')}</textarea></div>
+                ${preview.body ? `<div class="edit-field" style="flex:1"><label>正文</label><textarea id="editBody" rows="4">${escapeHtml(preview.body)}</textarea></div>` : ''}
+                ${preview.links && preview.links.length > 0 ? `<div class="edit-links"><label>链接</label>${preview.links.map(l => `<a href="${l}" target="_blank" class="preview-link" style="margin-right:8px">🔗 ${escapeHtml(l)}</a>`).join('')}</div>` : ''}
+              </div>
+              <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="handleAIParse()" id="aiParseBtn">🤖 AI智能解析</button>
+                <span style="font-size:11px;color:#888" id="aiParseStatus"></span>
+              </div>
+            `;
+          }
+          if (status) { status.textContent = '✅ AI解析完成'; status.style.color = '#16a34a'; }
+        } else {
+          if (status) { status.textContent = '❌ ' + (data.error || '解析返回空结果'); status.style.color = '#dc2626'; }
+        }
+      } catch(e) {
+        if (status) { status.textContent = '❌ 请求失败: ' + e.message; status.style.color = '#dc2626'; }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🤖 AI智能解析';
       }
     };
 

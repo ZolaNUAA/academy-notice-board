@@ -431,6 +431,16 @@ function loadConfig() {
     maxLogSize: 10 * 1024 * 1024,
     pageLimit: 30
   };
+  // Ensure parser config exists with defaults
+  if (!cfg.parser) cfg.parser = {
+    enabled: false,
+    provider: 'minimax',
+    apiKey: '',
+    apiUrl: '',
+    model: 'MiniMax-M2.7',
+    timeout: 30000,
+    useOnSubmit: false
+  };
   return cfg;
 }
 
@@ -1376,6 +1386,32 @@ function parseRawInput(raw) {
   return splitNoticeBlocks(raw).map((b, i) => parseNoticeBlock(b, i));
 }
 
+// ============ Dual Parser Dispatch ============
+async function dispatchParse(raw, parserConfig) {
+  if (parserConfig && parserConfig.enabled && parserConfig.provider && parserConfig.apiKey) {
+    try {
+      const llmParser = require('./lib/llm-parser');
+      const result = await llmParser.parseWithLLM(raw, parserConfig);
+      if (result && Array.isArray(result) && result.length > 0) {
+        logOperation('LLM_PARSE_SUCCESS', {
+          count: result.length,
+          provider: parserConfig.provider,
+          model: parserConfig.model
+        });
+        return result;
+      }
+    } catch (e) {
+      console.error('[LLM] Parse failed, falling back to local:', e.message);
+      logOperation('LLM_PARSE_FAILED', {
+        error: e.message?.substring(0, 200),
+        provider: parserConfig.provider
+      });
+    }
+  }
+  // Fallback to local parser
+  return parseRawInput(raw);
+}
+
 // ============ Data Operations ============
 function readNotices() {
   try {
@@ -1820,7 +1856,9 @@ function handlePOST(req, res) {
         console.log('[DEBUG] Final attachments array:', attachments);
 
         if (!text) return sendJSON(res, 400, { error: 'text required' });
-        const newNotices = parseRawInput(text);
+        const parserConfig = config.parser;
+        const useLLM = parserConfig.enabled && parserConfig.useOnSubmit;
+        const newNotices = await dispatchParse(text, useLLM ? parserConfig : null);
 
         // Attach files to first notice (or all if needed)
         if (attachments.length > 0 && newNotices.length > 0) {
@@ -1838,23 +1876,22 @@ function handlePOST(req, res) {
     });
   } else {
     // JSON body
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', () => {
+    parseJSONBody(req).then(async (parsed) => {
       try {
-        const parsed = JSON.parse(body);
         const text = parsed.text;
         if (!text) return sendJSON(res, 400, { error: 'text required' });
-        const newNotices = parseRawInput(text);
+        const parserConfig = config.parser;
+        const useLLM = parserConfig.enabled && parserConfig.useOnSubmit;
+        const newNotices = await dispatchParse(text, useLLM ? parserConfig : null);
         const existing = readNotices();
         const all = [...existing, ...newNotices];
         writeNotices(all);
         sendJSON(res, 200, { success: true, count: newNotices.length, notices: newNotices });
       } catch(e) {
-        console.error('POST error:', e.message, 'Body:', body.slice(0, 100));
+        console.error('POST error:', e.message);
         sendJSON(res, 500, { error: 'Parse error: ' + e.message });
       }
-    });
+    }).catch(e => sendJSON(res, 500, { error: 'Parse error: ' + e.message }));
   }
 }
 
@@ -1943,7 +1980,9 @@ async function handleWebhook(req, res) {
         return sendJSON(res, 401, { error: 'Invalid secret' });
       }
 
-      const notices = parseRawInput(text);
+      const parserConfig = config.parser;
+      const useLLM = parserConfig.enabled && parserConfig.useOnSubmit;
+      const notices = await dispatchParse(text, useLLM ? parserConfig : null);
       const existing = readNotices();
       const now = new Date();
 
@@ -2013,6 +2052,71 @@ async function handlePreview(req, res) {
   } catch(e) {
     sendJSON(res, 500, { error: 'Parse error: ' + e.message });
   }
+}
+
+// LLM parse endpoint (manual trigger)
+async function handleParseLLM(req, res) {
+  try {
+    const parsed = await parseJSONBody(req);
+    const text = parsed.text;
+    if (!text) return sendJSON(res, 400, { error: 'text required' });
+    const parserConfig = config.parser;
+    if (!parserConfig.enabled || !parserConfig.apiKey) {
+      return sendJSON(res, 400, { error: 'AI解析未配置，请在管理面板中设置API Key并启用' });
+    }
+    const notices = await dispatchParse(text, parserConfig);
+    const enriched = notices.map(n => ({
+      ...n,
+      _diagnostics: getParseDiagnostics(n),
+      _source: 'llm'
+    }));
+    sendJSON(res, 200, { notices: enriched });
+  } catch(e) {
+    sendJSON(res, 500, { error: 'AI解析失败: ' + e.message });
+  }
+}
+
+// Parser config management
+async function handleParserConfig(req, res) {
+  if (req.method === 'GET') {
+    // Return config with apiKey redacted
+    const safe = { ...config.parser };
+    if (safe.apiKey) safe.apiKey = '***';
+    sendJSON(res, 200, { parser: safe });
+    return;
+  }
+
+  if (req.method === 'POST') {
+    try {
+      const { oldPassword, parser } = await parseJSONBody(req);
+      const admin = checkAdminPassword(oldPassword);
+      if (!admin || admin.role !== 'root') {
+        return sendJSON(res, 401, { error: '需要超级管理员密码' });
+      }
+
+      const valid = {};
+      if (typeof parser.enabled === 'boolean') valid.enabled = parser.enabled;
+      if (typeof parser.useOnSubmit === 'boolean') valid.useOnSubmit = parser.useOnSubmit;
+      if (parser.provider && ['minimax','openrouter','deepseek','openai','anthropic'].includes(parser.provider)) {
+        valid.provider = parser.provider;
+      }
+      if (typeof parser.apiKey === 'string' && parser.apiKey !== '***') valid.apiKey = parser.apiKey;
+      if (typeof parser.apiUrl === 'string') valid.apiUrl = parser.apiUrl;
+      if (typeof parser.model === 'string') valid.model = parser.model;
+      if (parser.timeout) valid.timeout = Math.min(Math.max(10000, parseInt(parser.timeout)), 60000);
+
+      config.parser = { ...config.parser, ...valid };
+      saveConfig(config);
+
+      logOperation('PARSER_CONFIG', { admin: admin.username, changes: Object.keys(valid) });
+      sendJSON(res, 200, { success: true, parser: config.parser });
+    } catch(e) {
+      sendJSON(res, 500, { error: '保存失败: ' + e.message });
+    }
+    return;
+  }
+
+  sendJSON(res, 405, { error: 'Method not allowed' });
 }
 
 // Logs viewer (for root)
@@ -2328,6 +2432,16 @@ const server = http.createServer((req, res) => {
   // Preview: parse text without saving
   if (url.pathname === '/api/preview') {
     if (req.method === 'POST') return handlePreview(req, res);
+  }
+
+  // LLM parse endpoint (manual AI trigger)
+  if (url.pathname === '/api/parse/llm') {
+    if (req.method === 'POST') return handleParseLLM(req, res);
+  }
+
+  // Parser config management
+  if (url.pathname === '/api/parser-config') {
+    return handleParserConfig(req, res);
   }
 
   // Stats: visit counter and notice stats
