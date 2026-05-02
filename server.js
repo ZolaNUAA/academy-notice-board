@@ -1766,12 +1766,29 @@ async function handleGET(req, res) {
     );
   }
 
-  // Sort: importance desc, then deadline asc
+  // Sort: default publishDate desc, or by query param
+  const sortBy = url.searchParams.get('sort') || 'publishDate';
   notices.sort((a, b) => {
-    if (a.importance !== b.importance) return b.importance - a.importance;
-    if (!a.deadline) return 1;
-    if (!b.deadline) return -1;
-    return new Date(a.deadline) - new Date(b.deadline);
+    if (sortBy === 'publishDate' || sortBy === 'date') {
+      if (!a.publishDate) return 1;
+      if (!b.publishDate) return -1;
+      return new Date(b.publishDate) - new Date(a.publishDate); // newest first
+    }
+    if (sortBy === 'deadline') {
+      if (!a.deadline) return 1;
+      if (!b.deadline) return -1;
+      return new Date(a.deadline) - new Date(b.deadline);
+    }
+    if (sortBy === 'importance') {
+      if (a.importance !== b.importance) return b.importance - a.importance;
+      if (!a.deadline) return 1;
+      if (!b.deadline) return -1;
+      return new Date(a.deadline) - new Date(b.deadline);
+    }
+    // type sort
+    if (!a.type) return 1;
+    if (!b.type) return -1;
+    return a.type.localeCompare(b.type);
   });
 
   const total = notices.length;
@@ -2317,11 +2334,20 @@ function handleStats(req, res) {
     return d >= today;
   }).length;
 
+  // Per-type counts for filter labels
+  const typeCounts = {};
+  const ALL_TYPES = ['科研','教学','研究生','学工','党务','人事','保密','国资','安全','国合','全院','其他'];
+  for (const t of ALL_TYPES) typeCounts[t] = 0;
+  for (const n of notices) {
+    if (typeCounts[n.type] !== undefined) typeCounts[n.type]++;
+  }
+
   sendJSON(res, 200, {
     totalVisits: config.visits,
     lastVisit: config.lastVisit,
     todayNotices: todayCount,
     totalNotices: notices.length,
+    typeCounts,
     version: cachedVersion ? cachedVersion.version : (process.env.DEPLOY_VERSION || getGitShortHash()),
     versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})),
     indexHtmlTime: (() => {

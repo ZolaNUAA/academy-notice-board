@@ -118,19 +118,20 @@
 
     /* Board - Masonry */
     .board {
-      column-count: 4;
-      column-gap: 16px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      align-items: start;
     }
-    @media (max-width: 1200px) { .board { column-count: 3; } }
-    @media (max-width: 900px) { .board { column-count: 2; } }
-    @media (max-width: 550px) { .board { column-count: 1; } }
+    @media (max-width: 1200px) { .board { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 900px) { .board { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 550px) { .board { grid-template-columns: 1fr; } }
 
     /* Sticky Note */
     .sticky-note {
-      break-inside: avoid;
       padding: 16px;
       padding-top: 20px;
-      margin-bottom: 16px;
+      margin-bottom: 0;
       border-radius: 4px;
       box-shadow: 4px 4px 14px rgba(0,0,0,0.12);
       position: relative;
@@ -170,18 +171,18 @@
       border-radius: 999px;
       white-space: nowrap;
     }
-    .note-badge.type-research { background: #fef3c7; color: #92400e; }
-    .note-badge.type-teaching { background: #ffedd5; color: #9a3412; }
-    .note-badge.type-postgrad { background: #dbeafe; color: #1e40af; }
-    .note-badge.type-student { background: #dcfce7; color: #166534; }
+    .note-badge.type-research { background: #ffedd5; color: #9a3412; }
+    .note-badge.type-teaching { background: #dbeafe; color: #1e40af; }
+    .note-badge.type-postgrad { background: #ede9fe; color: #5b21b6; }
+    .note-badge.type-student { background: #d1fae5; color: #065f46; }
     .note-badge.type-party { background: #fee2e2; color: #991b1b; }
-    .note-badge.type-personnel { background: #fae8ff; color: #86198f; }
+    .note-badge.type-personnel { background: #fce7f3; color: #9d174d; }
     .note-badge.type-confidential { background: #fecaca; color: #7f1d1d; }
-    .note-badge.type-state-assets { background: #ede9fe; color: #5b21b6; }
-    .note-badge.type-safety { background: #fef9c3; color: #854d0e; }
+    .note-badge.type-state-assets { background: #e0e7ff; color: #3730a3; }
+    .note-badge.type-safety { background: #fef3c7; color: #92400e; }
     .note-badge.type-international { background: #cffafe; color: #155e75; }
-    .note-badge.type-admin { background: #e5e7eb; color: #374151; }
-    .note-badge.type-other { background: #f3f4f6; color: #6b7280; }
+    .note-badge.type-admin { background: #f3f4f6; color: #374151; }
+    .note-badge.type-other { background: #f1f5f9; color: #475569; }
     .note-stars { font-size: 13px; letter-spacing: 1px; }
     .star-high { color: #dc2626; }
     .star-medium { color: #d97706; }
@@ -253,18 +254,18 @@
     .note-owner { font-size: 12px; color: #888; }
 
     /* Category Colors */
-    .cat-research { background: linear-gradient(145deg, #fffbeb, #fef3c7); border-left: 4px solid #f59e0b; }
-    .cat-teaching { background: linear-gradient(145deg, #fff7ed, #ffedd5); border-left: 4px solid #f97316; }
-    .cat-postgrad { background: linear-gradient(145deg, #eff6ff, #dbeafe); border-left: 4px solid #3b82f6; }
-    .cat-student { background: linear-gradient(145deg, #f0fdf4, #dcfce7); border-left: 4px solid #22c55e; }
-    .cat-personnel { background: linear-gradient(145deg, #fdf4ff, #fae8ff); border-left: 4px solid #c026d3; }
-    .cat-confidential { background: linear-gradient(145deg, #fef2f2, #fee2e2); border-left: 4px solid #ef4444; }
-    .cat-state-assets { background: linear-gradient(145deg, #f5f3ff, #ede9fe); border-left: 4px solid #8b5cf6; }
-    .cat-safety { background: linear-gradient(145deg, #fffbeb, #fef3c7); border-left: 4px solid #eab308; }
+    .cat-research { background: linear-gradient(145deg, #fff7ed, #ffedd5); border-left: 4px solid #f97316; }
+    .cat-teaching { background: linear-gradient(145deg, #eff6ff, #dbeafe); border-left: 4px solid #2563eb; }
+    .cat-postgrad { background: linear-gradient(145deg, #f5f3ff, #ede9fe); border-left: 4px solid #7c3aed; }
+    .cat-student { background: linear-gradient(145deg, #ecfdf5, #d1fae5); border-left: 4px solid #059669; }
     .cat-party { background: linear-gradient(145deg, #fef2f2, #fee2e2); border-left: 4px solid #dc2626; }
-    .cat-international { background: linear-gradient(145deg, #ecfeff, #cffafe); border-left: 4px solid #06b6d4; }
+    .cat-personnel { background: linear-gradient(145deg, #fdf2f8, #fce7f3); border-left: 4px solid #db2777; }
+    .cat-confidential { background: linear-gradient(145deg, #fef2f2, #fecaca); border-left: 4px solid #b91c1c; }
+    .cat-state-assets { background: linear-gradient(145deg, #eef2ff, #e0e7ff); border-left: 4px solid #4f46e5; }
+    .cat-safety { background: linear-gradient(145deg, #fffbeb, #fef3c7); border-left: 4px solid #d97706; }
+    .cat-international { background: linear-gradient(145deg, #ecfeff, #cffafe); border-left: 4px solid #0891b2; }
     .cat-admin, .cat-全院 { background: linear-gradient(145deg, #f9fafb, #f3f4f6); border-left: 4px solid #6b7280; }
-    .cat-other { background: linear-gradient(145deg, #fff7ed, #ffedd5); border-left: 4px solid #fb923c; }
+    .cat-other { background: linear-gradient(145deg, #f8fafc, #f1f5f9); border-left: 4px solid #64748b; }
 
     /* Expired Section */
     .expired-section { margin-top: 30px; }
@@ -829,7 +830,7 @@
       selectedType: 'all',
       showExpired: false,
       search: '',
-      sortBy: 'deadline',
+      sortBy: 'publishDate',
       showAddModal: false,
       showLoginModal: false,
       showEditModal: false,
@@ -838,6 +839,7 @@
       addPreview: null,
       pendingAttachments: [], // 待上传的附件（仅文件名）
       stats: null,
+      typeCounts: null,
       darkMode: localStorage.getItem('darkMode') === 'true',
       // Pagination
       currentPage: 1,
@@ -923,7 +925,8 @@
         page: state.currentPage,
         limit: state.pageLimit,
         type: state.selectedType,
-        expired: state.showExpired ? 'true' : 'false'
+        expired: state.showExpired ? 'true' : 'false',
+        sort: state.sortBy
       });
       if (state.search) params.set('search', state.search);
 
@@ -955,7 +958,11 @@
     async function fetchStats() {
       try {
         const res = await fetch('/api/stats');
-        if (res.ok) state.stats = await res.json();
+        if (res.ok) {
+          const data = await res.json();
+          state.stats = data;
+          if (data.typeCounts) state.typeCounts = data.typeCounts;
+        }
       } catch(e) { console.error(e); }
     }
 
@@ -1142,9 +1149,10 @@
 
     function getCatDotColor(typeClass) {
       const colors = {
-        'cat-research': '#f59e0b', 'cat-teaching': '#f97316', 'cat-postgrad': '#3b82f6',
-        'cat-student': '#22c55e', 'cat-personnel': '#c026d3', 'cat-confidential': '#ef4444', 'cat-state-assets': '#8b5cf6',
-        'cat-safety': '#eab308', 'cat-party': '#dc2626', 'cat-international': '#06b6d4', 'cat-admin': '#6b7280', 'cat-other': '#fb923c',
+        'cat-research': '#f97316', 'cat-teaching': '#2563eb', 'cat-postgrad': '#7c3aed',
+        'cat-student': '#059669', 'cat-party': '#dc2626', 'cat-personnel': '#db2777',
+        'cat-confidential': '#b91c1c', 'cat-state-assets': '#4f46e5',
+        'cat-safety': '#d97706', 'cat-international': '#0891b2', 'cat-admin': '#6b7280', 'cat-other': '#64748b',
       };
       return colors[typeClass] || '#9e9e9e';
     }
@@ -1343,22 +1351,24 @@
               显示过期
             </label>
             <select class="sort-select" onchange="state.sortBy=this.value;fetchNotices()">
-              <option value="importance" ${state.sortBy==='importance'?'selected':''}>⭐ 重要性</option>
+              <option value="publishDate" ${state.sortBy==='publishDate'?'selected':''}>📅 发布时间</option>
               <option value="deadline" ${state.sortBy==='deadline'?'selected':''}>⏰ 截止日期</option>
-              <option value="publishDate" ${state.sortBy==='publishDate'?'selected':''}>📅 发布日期</option>
+              <option value="importance" ${state.sortBy==='importance'?'selected':''}>⭐ 重要性</option>
               <option value="type" ${state.sortBy==='type'?'selected':''}>🏷️ 类别</option>
             </select>
           </div>
 
           <div class="category-filters">
             <button type="button" class="category-chip ${state.selectedType==='all'?'active':''}" onclick="state.selectedType='all';fetchNotices()">
-              全部
+              全部 ${state.typeCounts ? '(' + Object.values(state.typeCounts).reduce((a,b)=>a+b,0) + ')' : ''}
             </button>
-            ${ALL_TYPES.map(t => `
-              <button type="button" class="category-chip ${state.selectedType===t.name?'active':''}" onclick="state.selectedType='${t.name}';fetchNotices()">
-                ${t.name}
-              </button>
-            `).join('')}
+            ${ALL_TYPES.map(t => {
+              const cnt = (state.typeCounts && state.typeCounts[t.name]) || 0;
+              return `
+              <button type="button" class="category-chip ${state.selectedType===t.name?'active':''}" onclick="state.selectedType='${t.name}';fetchNotices()" ${cnt===0?'style="opacity:0.4"':''}>
+                ${getTypeIcon(t.name)} ${t.name} ${cnt > 0 ? '('+cnt+')' : ''}
+              </button>`;
+            }).join('')}
           </div>
 
           ${state.loading ? '<div class="loading">加载中...</div>' : ''}
@@ -2146,6 +2156,13 @@
       return `type-${map[type] || 'other'}`;
     }
 
+    function getTypeIcon(type) {
+      const icons = { '科研':'🔬','教学':'📚','研究生':'🎓','学工':'🎯',
+        '党务':'🚩','人事':'👥','保密':'🔒','国资':'🏛️',
+        '安全':'🛡️','国合':'🌍','全院':'🏫','其他':'📌' };
+      return icons[type] || '📌';
+    }
+
     function renderStickyNote(n) {
       const keyPoints = n.keyPoints && n.keyPoints.length > 0 ? n.keyPoints : extractKeyPoints(n.body);
       const catClass = getCatClass(n.type);
@@ -2169,7 +2186,7 @@
           ${urgency ? `<div class="urgency-strip ${urgency}"></div>` : ''}
           <div class="pin"></div>
           <div class="note-top">
-            <span class="note-badge ${badgeClass}">${n.type}</span>
+            <span class="note-badge ${badgeClass}">${getTypeIcon(n.type)} ${n.type}</span>
             <span class="note-stars ${n.importance===3?'star-high':n.importance===2?'star-medium':'star-low'}">${renderStars(n.importance)}</span>
           </div>
           <h3 class="note-title">${escapeHtml(n.title)}</h3>
@@ -2224,7 +2241,7 @@
           <div class="info">
             <div class="title">${escapeHtml(n.title)}</div>
             <div class="meta">
-              <span class="meta-item">🏷️ ${n.type}</span>
+              <span class="meta-item">${getTypeIcon(n.type)} ${n.type}</span>
               <span class="meta-item">📅 ${formatDate(n.publishDate)}</span>
               ${n.deadline ? `<span class="meta-item">⏰ <span class="${ddlClass}">${ddlText}</span></span>` : ''}
               <span class="meta-item">👤 ${n.owner}</span>
