@@ -2280,6 +2280,13 @@ function getGitShortHash() {
   } catch { return 'local'; }
 }
 
+function getGitCommitDate() {
+  try {
+    const d = require('child_process').execSync('git log -1 --format=%ci', { cwd: __dirname, encoding: 'utf-8' }).trim();
+    return new Date(d).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'});
+  } catch { return null; }
+}
+
 function fetchLatestCommit() {
   const token = process.env.GITHUB_TOKEN || '';
   if (!token || cachedVersion) return;
@@ -2350,7 +2357,7 @@ function handleStats(req, res) {
     totalNotices: notices.length,
     typeCounts,
     version: cachedVersion ? cachedVersion.version : (process.env.DEPLOY_VERSION || getGitShortHash()),
-    versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || SERVER_START_TIME),
+    versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || getGitCommitDate() || SERVER_START_TIME),
     indexHtmlTime: (() => {
       try {
         const stat = fs.statSync(path.join(__dirname, 'index.html'));
