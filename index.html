@@ -2283,6 +2283,23 @@
               </div>`;
             }).join('')}
           </div>
+          ${data.topCities?.length > 0 ? `
+          <div style="font-weight:600;margin-bottom:8px;color:#333">🏙️ 访问城市 Top5</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            ${data.topCities.map((c, i) => {
+              const maxW = Math.max(...data.topCities.map(x => x.count));
+              const w = Math.round((c.count / maxW) * 100);
+              const colors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899'];
+              return `<div style="flex:1;min-width:80px;background:#fff;padding:8px;border-radius:8px;text-align:center">
+                <div style="font-size:18px;font-weight:700;color:${colors[i]}">${c.count}</div>
+                <div style="font-size:10px;color:#666;margin-top:2px">${c.city}</div>
+                <div style="background:${colors[i]}20;height:4px;border-radius:2px;margin-top:4px">
+                  <div style="background:${colors[i]};height:4px;border-radius:2px;width:${w}%"></div>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+          ` : ''}
           <div style="font-weight:600;margin-bottom:8px;color:#333">🕐 最近访问</div>
           <div style="max-height:200px;overflow-y:auto;font-size:11px">
             ${data.recentAccess?.length > 0 ? data.recentAccess.map(r => `

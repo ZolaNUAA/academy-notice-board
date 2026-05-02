@@ -2375,12 +2375,24 @@ async function handleVisitStats(req, res) {
     const todayVisits = daily[todayKey] || 0;
     const thisWeekVisits = days.reduce((s, d) => s + d.count, 0);
     const enriched = await enrichRecentAccess(recent);
+    // Aggregate top cities from recent access
+    const cityCounts = {};
+    for (const r of enriched) {
+      const loc = r.location || '未知';
+      if (loc === '内网') continue;
+      cityCounts[loc] = (cityCounts[loc] || 0) + 1;
+    }
+    const topCities = Object.entries(cityCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([city, count]) => ({ city, count }));
     sendJSON(res, 200, {
       totalVisits: config.visits,
       todayVisits,
       thisWeekVisits,
       dailyVisits: days,
-      recentAccess: enriched
+      recentAccess: enriched,
+      topCities
     });
   } catch(e) {
     console.error('[VisitStats] Error:', e.message);
