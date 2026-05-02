@@ -2518,6 +2518,53 @@ function handleStats(req, res) {
   });
 }
 
+// Generate .ics calendar file for a notice deadline
+function handleCalendarDownload(req, res, id) {
+  const notices = readNotices();
+  const notice = notices.find(n => n.id === id);
+  if (!notice || !notice.deadline) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Notice not found or has no deadline');
+    return;
+  }
+  const deadline = new Date(notice.deadline);
+  // Format dates as YYYYMMDD for all-day event
+  const pad = n => String(n).padStart(2, '0');
+  const dtStart = `${deadline.getFullYear()}${pad(deadline.getMonth()+1)}${pad(deadline.getDate())}`;
+  // End date is the next day (exclusive)
+  const nextDay = new Date(deadline);
+  nextDay.setDate(nextDay.getDate() + 1);
+  const dtEnd = `${nextDay.getFullYear()}${pad(nextDay.getMonth()+1)}${pad(nextDay.getDate())}`;
+  // Escape special chars in iCalendar text
+  const esc = s => (s || '').replace(/[\\;,]/g, '\\$&').replace(/\n/g, '\\n').substring(0, 500);
+  const now = new Date().toISOString().replace(/[-:]/g, '').substring(0, 15) + 'Z';
+  const summary = `⏰ 截止：${notice.title}`;
+  const description = esc((notice.body || '').substring(0, 500));
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Academy Notice Board//Notice Calendar//ZH',
+    'BEGIN:VEVENT',
+    `DTSTART;VALUE=DATE:${dtStart}`,
+    `DTEND;VALUE=DATE:${dtEnd}`,
+    `DTSTAMP:${now}`,
+    `SUMMARY:${esc(summary)}`,
+    `DESCRIPTION:${description}`,
+    'BEGIN:VALARM',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:提醒：${esc(notice.title)} 今天截止`,
+    'TRIGGER:-P1D', // 1 day before
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].join('\r\n');
+  res.writeHead(200, {
+    'Content-Type': 'text/calendar; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${encodeURIComponent(notice.title.substring(0, 30))}-截止.ics"`
+  });
+  res.end(ics);
+}
+
 function handleDELETE(req, res, id) {
   let deleted = false;
   modifyNotices(notices => {
@@ -2614,6 +2661,12 @@ const server = http.createServer((req, res) => {
     });
     res.end();
     return;
+  }
+
+  // Calendar download (add to phone calendar)
+  if (url.pathname.startsWith('/api/calendar/')) {
+    const id = url.pathname.split('/').pop();
+    if (req.method === 'GET') return handleCalendarDownload(req, res, id);
   }
 
   // API routes

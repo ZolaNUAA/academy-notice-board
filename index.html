@@ -217,6 +217,8 @@
     .info-chip.chip-location { background: #eff6ff; color: #1d4ed8; }
     .info-chip.chip-owner { background: #fdf4ff; color: #86198f; }
     .info-chip.chip-urgent { background: #fef2f2; color: #dc2626; font-weight: 700; }
+    .cal-add-link { text-decoration: none; font-size: 14px; opacity: 0.6; transition: opacity 0.2s; }
+    .cal-add-link:hover, .cal-add-link:active { opacity: 1; }
     @keyframes chipPulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
@@ -787,19 +789,78 @@
     .key-points li { margin-bottom: 3px; }
 
     /* Dark mode */
-    body.dark-mode { background: #1a1a2e; color: #e0e0e0; }
-    body.dark-mode .header { background: rgba(30,30,50,0.95); color: #e0e0e0; }
-    body.dark-mode .header .logo { color: #e0e0e0; }
-    body.dark-mode .tab { background: #2d2d44; color: #a0a0a0; }
-    body.dark-mode .tab.active { background: #3b82f6; color: #fff; }
+    body.dark-mode {
+      background: radial-gradient(circle at 18% 14%, #252747 0, #17182b 45%, #10111e 100%);
+      color: #e7e9f3;
+    }
+    body.dark-mode .header {
+      background: rgba(28, 30, 50, 0.92);
+      color: #eef2ff;
+      border-color: rgba(116, 139, 190, 0.32);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.32);
+    }
+    body.dark-mode .header.admin {
+      background: linear-gradient(135deg, rgba(37, 64, 112, 0.92), rgba(28, 30, 50, 0.94));
+      border-color: rgba(96, 165, 250, 0.42);
+    }
+    body.dark-mode .header h1,
+    body.dark-mode .header .logo { color: #f8fafc; }
+    body.dark-mode .header p { color: #aeb8d4; }
+    body.dark-mode .tabs {
+      background: rgba(20, 22, 38, 0.92);
+      border: 1px solid rgba(116, 139, 190, 0.22);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.24);
+    }
+    body.dark-mode .tab { background: transparent; color: #aeb8d4; }
+    body.dark-mode .tab:hover:not(.active) { background: rgba(96, 165, 250, 0.12); color: #dbe7ff; }
+    body.dark-mode .tab.active { background: #4776d7; color: #fff; box-shadow: 0 2px 12px rgba(71,118,215,0.34); }
+    body.dark-mode .controls {
+      background: rgba(24, 26, 44, 0.94);
+      border: 1px solid rgba(116, 139, 190, 0.22);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+    }
+    body.dark-mode .search-input,
+    body.dark-mode .sort-select {
+      background: #111827;
+      color: #e5e7eb;
+      border-color: #374151;
+    }
+    body.dark-mode .search-input::placeholder { color: #78849c; }
+    body.dark-mode .search-input:focus,
+    body.dark-mode .sort-select:focus {
+      border-color: #6ea8ff;
+      box-shadow: 0 0 0 3px rgba(110,168,255,0.18);
+    }
+    body.dark-mode .filter-checkbox { color: #c3ccdf; }
+    body.dark-mode .filter-checkbox input { accent-color: #6ea8ff; }
+    body.dark-mode .category-chip {
+      background: rgba(24, 26, 44, 0.9);
+      color: #c5cede;
+      border-color: rgba(148, 163, 184, 0.36);
+    }
+    body.dark-mode .category-chip:hover {
+      background: rgba(50, 58, 86, 0.95);
+      color: #f1f5f9;
+    }
+    body.dark-mode .category-chip.active {
+      background: rgba(71, 118, 215, 0.22);
+      color: #dbeafe;
+      border-color: #6ea8ff;
+    }
     /* Dark mode — 统一深色底+左侧彩色边 */
-    body.dark-mode .sticky-note { background: #1e1e30 !important; color: #c8c8d0; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-    body.dark-mode .sticky-note.expired { opacity: 0.5; }
+    body.dark-mode .sticky-note {
+      background: #1d2034 !important;
+      color: #cbd5e1;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.34);
+    }
+    body.dark-mode .sticky-note:hover { box-shadow: 0 14px 34px rgba(0,0,0,0.42); }
+    body.dark-mode .sticky-note.expired { opacity: 0.58; }
     body.dark-mode .note-badge { opacity: 0.85; }
-    body.dark-mode .note-title { color: #e8e8f0; }
-    body.dark-mode .note-content { color: #b0b0c0; }
-    body.dark-mode .note-meta { color: #888; }
-    body.dark-mode .note-owner { color: #888; }
+    body.dark-mode .note-title { color: #f1f5f9; }
+    body.dark-mode .note-content { color: #cbd5e1; }
+    body.dark-mode .note-meta { color: #8f9bb3; }
+    body.dark-mode .note-owner { color: #a8b3c7; }
     body.dark-mode .note-links { border-top-color: rgba(255,255,255,0.1); }
     body.dark-mode .note-links a { color: #7ca3f5; }
     body.dark-mode .note-footer { border-top-color: rgba(255,255,255,0.1); }
@@ -813,23 +874,60 @@
     body.dark-mode .info-chip.chip-location { background: rgba(59,130,246,0.15); color: #7ca3f5; }
     body.dark-mode .info-chip.chip-owner { background: rgba(147,51,234,0.15); color: #c084fc; }
     body.dark-mode .info-chip.chip-urgent { background: rgba(220,38,38,0.2); color: #fca5a5; }
-    body.dark-mode .key-points { background: rgba(255,255,255,0.03); }
-    body.dark-mode .key-points li { color: #b0b0c0; }
+    body.dark-mode .key-points {
+      background: rgba(15, 23, 42, 0.42);
+      border-color: rgba(148, 163, 184, 0.18);
+    }
+    body.dark-mode .key-points-title { color: #9fb0ca; }
+    body.dark-mode .key-points ul,
+    body.dark-mode .key-points li { color: #cbd5e1; }
     body.dark-mode .attachment-link { background: rgba(5,150,105,0.15); color: #6ee7b7; }
     body.dark-mode .attachment-link:hover { background: rgba(5,150,105,0.25); }
-    body.dark-mode .search-box { background: #2d2d44; }
-    body.dark-mode .search-box input { background: #1a1a2e; color: #e0e0e0; border-color: #444; }
-    body.dark-mode .category-tags { background: #1a1a2e; }
-    body.dark-mode .category-tags .tag { background: #2d2d44; color: #a0a0a0; }
-    body.dark-mode .category-tags .tag.active { background: #3b82f6; color: #fff; }
+    body.dark-mode .notice-list-item {
+      background: rgba(29, 32, 52, 0.94);
+      color: #e5e7eb;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.24);
+    }
+    body.dark-mode .notice-list-item:hover {
+      background: rgba(35, 40, 64, 0.98);
+      box-shadow: 0 12px 28px rgba(0,0,0,0.34);
+    }
+    body.dark-mode .notice-list-item .title { color: #f1f5f9; }
+    body.dark-mode .notice-list-item .meta { color: #9aa7bd; }
+    body.dark-mode .empty {
+      background: rgba(24, 26, 44, 0.72);
+      color: #aeb8d4;
+      border: 1px dashed rgba(148, 163, 184, 0.24);
+    }
+    body.dark-mode .loading { color: #aeb8d4; }
     body.dark-mode .modal { background: #2d2d44; color: #e0e0e0; }
     body.dark-mode .modal h2 { color: #e0e0e0; }
     body.dark-mode .modal input, body.dark-mode .modal textarea, body.dark-mode .modal select { background: #1a1a2e; color: #e0e0e0; border-color: #444; }
     body.dark-mode .login-page { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); }
     body.dark-mode .login-box { background: #2d2d44; }
     body.dark-mode .login-box h1 { color: #e0e0e0; }
-    body.dark-mode .admin-stats .stat-card { background: #2d2d44; color: #e0e0e0; }
-    body.dark-mode .admin-panel { background: #2d2d44; color: #e0e0e0; }
+    body.dark-mode .admin-stats .stat-card,
+    body.dark-mode .admin-stats .stat-card[style] {
+      background: rgba(29, 32, 52, 0.95) !important;
+      color: #e5e7eb;
+      border-color: rgba(96, 165, 250, 0.28);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.24);
+    }
+    body.dark-mode .stat-card .num,
+    body.dark-mode .stat-card .num[style] { color: #8bb8ff !important; }
+    body.dark-mode .stat-card.high .num { color: #fca5a5 !important; }
+    body.dark-mode .stat-card.medium .num { color: #fbbf24 !important; }
+    body.dark-mode .stat-card.expired .num { color: #cbd5e1 !important; }
+    body.dark-mode .stat-card .label { color: #aeb8d4; }
+    body.dark-mode .stat-card .bar { background: rgba(148, 163, 184, 0.18); }
+    body.dark-mode .admin-panel {
+      background: rgba(29, 32, 52, 0.95);
+      color: #e5e7eb;
+      border-color: rgba(96, 165, 250, 0.28);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.24);
+    }
+    body.dark-mode .admin-panel .section-title { color: #93c5fd; }
     body.dark-mode .add-preview { background: #1a1a2e; border-color: #444; }
     body.dark-mode .preview-title { color: #e0e0e0; }
     body.dark-mode .preview-body-preview { background: #252540; color: #b0b0b0; }
@@ -2231,7 +2329,7 @@
 
       // Info chips
       let chips = '';
-      if (cddl) chips += `<span class="info-chip ${cddl.cls}">${cddl.ico} ${cddl.text}</span>`;
+      if (cddl) chips += `<span class="info-chip ${cddl.cls}">${cddl.ico} ${cddl.text}<a href="/api/calendar/${n.id}" title="添加到手机日历" onclick="event.stopPropagation()" class="cal-add-link"> 📅</a></span>`;
       if (n.location) chips += `<span class="info-chip chip-location">📍 ${escapeHtml(n.location)}</span>`;
       if (n.owner && n.owner !== '未指定') chips += `<span class="info-chip chip-owner">👤 ${escapeHtml(n.owner)}</span>`;
       if (n.importance === 3 && urgency) chips += `<span class="info-chip chip-urgent">⚠️ 高优先级</span>`;
@@ -2298,7 +2396,7 @@
             <div class="meta">
               <span class="meta-item">${getTypeIcon(n.type)} ${n.type}</span>
               <span class="meta-item">📅 ${formatDate(n.publishDate)}</span>
-              ${n.deadline ? `<span class="meta-item">⏰ <span class="${ddlClass}">${ddlText}</span></span>` : ''}
+              ${n.deadline ? `<span class="meta-item">⏰ <span class="${ddlClass}">${ddlText}</span><a href="/api/calendar/${n.id}" title="添加到手机日历" onclick="event.stopPropagation()" class="cal-add-link"> 📅</a></span>` : ''}
               <span class="meta-item">👤 ${n.owner}</span>
               <span class="note-stars ${n.importance===3?'star-high':n.importance===2?'star-medium':'star-low'}" style="font-size:11px">${renderStars(n.importance)}</span>
               ${n.attachments && n.attachments.length > 0 ? `<span class="meta-item">📎 ${n.attachments.length}</span>` : ''}
