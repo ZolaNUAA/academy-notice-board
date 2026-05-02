@@ -409,7 +409,26 @@ function loadConfig() {
       },
       version: 1,
       visits: 0,
-      lastVisit: null
+      lastVisit: null,
+      limits: {
+        maxBodySize: 2 * 1024 * 1024,
+        maxFileSize: 5 * 1024 * 1024,
+        requestTimeout: 30000,
+        maxLogSize: 10 * 1024 * 1024,
+        pageLimit: 30
+      },
+      parser: {
+        enabled: false,
+        provider: 'minimax',
+        apiKey: '',
+        apiUrl: '',
+        model: 'MiniMax-M2.7',
+        timeout: 30000,
+        useOnSubmit: false,
+        systemPrompt: '',
+        userPromptTemplate: '',
+        bodyEnhancePrompt: ''
+      }
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
     console.log('⚠️ 默认管理员密码: ChangeMe@2024 (请尽快修改!)');
@@ -1451,6 +1470,98 @@ function writeNotices(notices) {
 }
 
 // ============ Auth Handlers ============
+const SESSION_COOKIE = 'anb_session';
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const sessions = new Map();
+
+function parseCookies(req) {
+  const header = req.headers.cookie || '';
+  const cookies = {};
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    const val = part.slice(idx + 1).trim();
+    if (key) cookies[key] = decodeURIComponent(val);
+  }
+  return cookies;
+}
+
+function buildSessionCookie(token, maxAgeSeconds) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${secure}`;
+}
+
+function createSession(admin) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+  sessions.set(token, {
+    username: admin.username,
+    role: admin.role,
+    expiresAt
+  });
+  return { token, expiresAt };
+}
+
+function getSessionAdmin(req) {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (!token) return null;
+
+  const session = sessions.get(token);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now()) {
+    sessions.delete(token);
+    return null;
+  }
+
+  const current = config.admins?.[session.username];
+  if (!current) {
+    sessions.delete(token);
+    return null;
+  }
+
+  session.expiresAt = Date.now() + SESSION_TTL_MS;
+  return {
+    username: session.username,
+    role: current.role || session.role,
+    token
+  };
+}
+
+function invalidateSessionsForUser(username, exceptToken = '') {
+  for (const [token, session] of sessions) {
+    if (session.username === username && token !== exceptToken) {
+      sessions.delete(token);
+    }
+  }
+}
+
+function requireAdmin(req, res) {
+  const admin = getSessionAdmin(req);
+  if (!admin) {
+    sendJSON(res, 401, { error: '需要管理员登录' });
+    return null;
+  }
+  return admin;
+}
+
+function requireRoot(req, res) {
+  const admin = requireAdmin(req, res);
+  if (!admin) return null;
+  if (admin.role !== 'root') {
+    sendJSON(res, 403, { error: '需要超级管理员权限' });
+    return null;
+  }
+  return admin;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions) {
+    if (session.expiresAt <= now) sessions.delete(token);
+  }
+}, 30 * 60 * 1000);
+
 // ============ 登录频率限制 ============
 const loginAttempts = new Map();
 const LOGIN_MAX_ATTEMPTS = 5;        // 最多失败5次
@@ -1536,6 +1647,7 @@ async function handleLogin(req, res) {
     const admin = checkAdminPassword(password);
 
     if (admin) {
+      const session = createSession(admin);
       recordLoginSuccess(ip);
       logOperation('LOGIN', {
         username: admin.username,
@@ -1543,7 +1655,9 @@ async function handleLogin(req, res) {
         ip: ip,
         userAgent: ua
       });
-      sendJSON(res, 200, { success: true, username: admin.username, role: admin.role });
+      sendJSON(res, 200, { success: true, username: admin.username, role: admin.role }, {
+        'Set-Cookie': buildSessionCookie(session.token, Math.floor(SESSION_TTL_MS / 1000))
+      });
     } else {
       recordLoginFail(ip);
       logOperation('LOGIN_FAILED', { password: password.substring(0, 4) + '***', ip, userAgent: ua });
@@ -1553,6 +1667,14 @@ async function handleLogin(req, res) {
   } catch(e) {
     sendJSON(res, 500, { error: 'Login error' });
   }
+}
+
+function handleLogout(req, res) {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (token) sessions.delete(token);
+  sendJSON(res, 200, { success: true }, {
+    'Set-Cookie': buildSessionCookie('', 0)
+  });
 }
 
 // ============ Verify Code ============
@@ -1611,6 +1733,7 @@ async function handleChangePassword(req, res) {
           return sendJSON(res, 404, { error: '用户不存在' });
         }
         delete config.admins[targetUsername];
+        invalidateSessionsForUser(targetUsername);
         saveConfig(config);
         logOperation('ADMIN_DELETE', { admin: currentAdmin.username, target: targetUsername, ip, userAgent: ua });
         return sendJSON(res, 200, { success: true });
@@ -1634,6 +1757,7 @@ async function handleChangePassword(req, res) {
       return sendJSON(res, 400, { error: '新密码不符合要求' });
     }
     config.admins[currentAdmin.username].hash = hashPassword(newPassword);
+    invalidateSessionsForUser(currentAdmin.username, parseCookies(req)[SESSION_COOKIE]);
     saveConfig(config);
     logOperation('PASSWORD_CHANGE', { admin: currentAdmin.username, ip, userAgent: ua });
     sendJSON(res, 200, { success: true });
@@ -1643,8 +1767,12 @@ async function handleChangePassword(req, res) {
 }
 
 // ============ HTTP Handlers ============
-function sendJSON(res, status, data) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+function sendJSON(res, status, data, extraHeaders = {}) {
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    ...extraHeaders
+  });
   res.end(JSON.stringify(data));
 }
 
@@ -2019,7 +2147,10 @@ async function handleWebhook(req, res) {
 
       // Verify webhook secret
       const cfg = loadConfig();
-      if (cfg.webhookSecret && secret !== cfg.webhookSecret) {
+      if (!cfg.webhookSecret) {
+        return sendJSON(res, 403, { error: 'Webhook未启用' });
+      }
+      if (secret !== cfg.webhookSecret) {
         return sendJSON(res, 401, { error: 'Invalid secret' });
       }
 
@@ -2459,18 +2590,30 @@ const server = http.createServer((req, res) => {
   // API routes
   if (url.pathname.startsWith('/api/notices/')) {
     const id = url.pathname.split('/').pop();
-    if (req.method === 'DELETE') return handleDELETE(req, res, id);
-    if (req.method === 'PATCH') return handlePATCH(req, res, id);
+    if (req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return;
+      return handleDELETE(req, res, id);
+    }
+    if (req.method === 'PATCH') {
+      if (!requireAdmin(req, res)) return;
+      return handlePATCH(req, res, id);
+    }
   }
 
   // Direct add a pre-parsed notice (from edited preview)
   if (url.pathname === '/api/notice') {
-    if (req.method === 'POST') return handleAddDirect(req, res);
+    if (req.method === 'POST') {
+      if (!requireAdmin(req, res)) return;
+      return handleAddDirect(req, res);
+    }
   }
 
   // Image upload
   if (url.pathname === '/api/image') {
-    if (req.method === 'POST') return handleImageUpload(req, res);
+    if (req.method === 'POST') {
+      if (!requireAdmin(req, res)) return;
+      return handleImageUpload(req, res);
+    }
   }
 
   // Webhook receiver for auto-import
@@ -2480,12 +2623,19 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === '/api/notices') {
     if (req.method === 'GET') return handleGET(req, res);
-    if (req.method === 'POST') return handlePOST(req, res);
+    if (req.method === 'POST') {
+      if (!requireAdmin(req, res)) return;
+      return handlePOST(req, res);
+    }
   }
 
 // Login: verify password
   if (url.pathname === '/api/login') {
     if (req.method === 'POST') return handleLogin(req, res);
+  }
+
+  if (url.pathname === '/api/logout') {
+    if (req.method === 'POST') return handleLogout(req, res);
   }
 
 // Verify access code
@@ -2495,7 +2645,10 @@ const server = http.createServer((req, res) => {
 
   // Change password
   if (url.pathname === '/api/password') {
-    if (req.method === 'POST') return handleChangePassword(req, res);
+    if (req.method === 'POST') {
+      if (!requireAdmin(req, res)) return;
+      return handleChangePassword(req, res);
+    }
   }
 
   // Preview: parse text without saving
@@ -2505,11 +2658,15 @@ const server = http.createServer((req, res) => {
 
   // LLM parse endpoint (manual AI trigger)
   if (url.pathname === '/api/parse/llm') {
-    if (req.method === 'POST') return handleParseLLM(req, res);
+    if (req.method === 'POST') {
+      if (!requireAdmin(req, res)) return;
+      return handleParseLLM(req, res);
+    }
   }
 
   // Parser config management
   if (url.pathname === '/api/parser-config') {
+    if (!requireRoot(req, res)) return;
     return handleParserConfig(req, res);
   }
 
@@ -2520,26 +2677,33 @@ const server = http.createServer((req, res) => {
 
   // Logs: get operation logs (root only)
   if (url.pathname === '/api/logs') {
-    if (req.method === 'GET') return handleLogs(req, res);
+    if (req.method === 'GET') {
+      if (!requireRoot(req, res)) return;
+      return handleLogs(req, res);
+    }
   }
 
   // Webhook config
   if (url.pathname === '/api/webhook/config') {
+    if (!requireRoot(req, res)) return;
     return handleWebhookConfig(req, res);
   }
 
   // System limits config (root only)
   if (url.pathname === '/api/limits') {
+    if (!requireRoot(req, res)) return;
     return handleLimits(req, res);
   }
 
   // Backup versions (root only)
   if (url.pathname === '/api/backup/versions') {
+    if (!requireRoot(req, res)) return;
     return handleBackupVersions(req, res);
   }
 
   // Restore from backup (root only)
   if (url.pathname === '/api/backup/restore') {
+    if (!requireRoot(req, res)) return;
     return handleBackupRestore(req, res);
   }
 
