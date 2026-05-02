@@ -2914,6 +2914,7 @@ window.handleLogin = async function() {
           state.adminRole = data.role || 'admin';
           state.showLoginModal = false;
           state.viewMode = 'sticky';
+          fetchStats(); // record authenticated visit with admin session cookie
           setTimeout(() => {
             state.loginSuccess = true;
             render();
