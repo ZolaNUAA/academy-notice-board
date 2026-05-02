@@ -1839,6 +1839,10 @@
                 <label style="font-size:13px;font-weight:500">User Prompt <span style="color:#888;font-weight:400;font-size:11px">(&#123;&#123;today&#125;&#125;=今天, 留空=内置默认)</span></label>
                 <textarea id="parser_userPrompt" rows="6" placeholder="留空=内置默认" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:11px;font-family:monospace;margin-top:2px;resize:vertical">${(p.userPromptTemplate||'').replace(/</g,'&lt;')}</textarea>
               </div>
+              <div style="margin-top:4px">
+                <label style="font-size:13px;font-weight:500">Body增强Prompt <span style="color:#888;font-weight:400;font-size:11px">({{body}}=正文, 留空=跳过第二步)</span></label>
+                <textarea id="parser_bodyEnhance" rows="4" placeholder="留空=跳过" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:11px;font-family:monospace;margin-top:2px;resize:vertical">${(p.bodyEnhancePrompt||'').replace(/</g,'&lt;')}</textarea>
+              </div>
             </div>
             <div style="margin-top:14px;padding:10px;background:#fef9c3;border-radius:8px;font-size:12px;color:#854d0e">
               ⚠️ 修改AI解析配置需要验证超级管理员密码
@@ -1866,7 +1870,8 @@
         model: document.getElementById('parser_model').value,
         timeout: parseInt(document.getElementById('parser_timeout').value),
         systemPrompt: document.getElementById('parser_systemPrompt').value,
-        userPromptTemplate: document.getElementById('parser_userPrompt').value
+        userPromptTemplate: document.getElementById('parser_userPrompt').value,
+        bodyEnhancePrompt: document.getElementById('parser_bodyEnhance').value
       };
       try {
         const res = await fetch('/api/parser-config', {

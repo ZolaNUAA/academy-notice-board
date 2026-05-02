@@ -441,7 +441,8 @@ function loadConfig() {
     timeout: 30000,
     useOnSubmit: false,
     systemPrompt: '',
-    userPromptTemplate: ''
+    userPromptTemplate: '',
+    bodyEnhancePrompt: ''
   };
   return cfg;
 }
@@ -1411,6 +1412,12 @@ async function dispatchParse(raw, parserConfig) {
       const llmParser = require('./lib/llm-parser');
       const result = await llmParser.parseWithLLM(raw, parserConfig);
       if (result && Array.isArray(result) && result.length > 0) {
+        // Step 2: Body HTML enhancement if configured
+        if (parserConfig.bodyEnhancePrompt) {
+          for (const n of result) {
+            if (n.body) n.body = await llmParser.enhanceBody(n.body, parserConfig);
+          }
+        }
         logOperation('LLM_PARSE_SUCCESS', {
           count: result.length,
           provider: parserConfig.provider,
@@ -2082,7 +2089,14 @@ async function handleParseLLM(req, res) {
     if (!parserConfig.enabled || !parserConfig.apiKey) {
       return sendJSON(res, 400, { error: 'AI解析未配置，请在管理面板中设置API Key并启用' });
     }
-    const notices = await dispatchParse(text, parserConfig);
+    let notices = await dispatchParse(text, parserConfig);
+    // Step 2: Body enhancement if configured
+    if (parserConfig.bodyEnhancePrompt && notices.length > 0) {
+      const llmParser = require('./lib/llm-parser');
+      for (const n of notices) {
+        if (n.body) n.body = await llmParser.enhanceBody(n.body, parserConfig);
+      }
+    }
     const enriched = notices.map(n => ({
       ...n,
       _diagnostics: getParseDiagnostics(n),
@@ -2123,6 +2137,7 @@ async function handleParserConfig(req, res) {
       if (typeof parser.model === 'string') valid.model = parser.model;
       if (typeof parser.systemPrompt === 'string') valid.systemPrompt = parser.systemPrompt;
       if (typeof parser.userPromptTemplate === 'string') valid.userPromptTemplate = parser.userPromptTemplate;
+      if (typeof parser.bodyEnhancePrompt === 'string') valid.bodyEnhancePrompt = parser.bodyEnhancePrompt;
       if (parser.timeout) valid.timeout = Math.min(Math.max(10000, parseInt(parser.timeout)), 60000);
 
       config.parser = { ...config.parser, ...valid };
