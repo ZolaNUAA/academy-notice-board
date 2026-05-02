@@ -2393,14 +2393,18 @@
           ` : ''}
           <div style="font-weight:600;margin-bottom:8px;color:#333">🕐 最近访问</div>
           <div style="max-height:200px;overflow-y:auto;font-size:11px">
-            ${data.recentAccess?.length > 0 ? data.recentAccess.map(r => `
-              <div style="border-bottom:1px solid #e5e7eb;padding:4px 0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px">
+            ${data.recentAccess?.length > 0 ? data.recentAccess.map(r => {
+              const authMap = { root: ['👑root','#dc2626','#fef2f2'], admin: ['🔑admin','#2563eb','#dbeafe'], visitor: ['👁️visitor','#6b7280','#f3f4f6'] };
+              const [authLabel, authColor, authBg] = authMap[r.auth] || authMap.visitor;
+              return `
+              <div style="border-bottom:1px solid #e5e7eb;padding:4px 0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;align-items:center">
                 <span style="color:#3b82f6">${new Date(r.time).toLocaleString('zh-CN')}</span>
+                <span style="font-size:10px;background:${authBg};color:${authColor};padding:1px 5px;border-radius:3px;font-weight:600">${authLabel}</span>
                 <span style="color:#888;font-family:monospace">${r.ip || '?'}</span>
                 <span style="color:#059669;font-size:11px">${r.location || ''}</span>
                 <span style="color:#aaa;font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(r.ua || '').replace(/Mozilla\/[\d.]+ /,'').replace(/AppleWebKit\/[\d.]+ /,'').replace(/\(KHTML, like Gecko\)/,'')}</span>
               </div>
-            `).join('') : '<div style="color:#888;text-align:center;padding:10px">暂无记录</div>'}
+            `}).join('') : '<div style="color:#888;text-align:center;padding:10px">暂无记录</div>'}
           </div>
         `;
       } catch(e) {

@@ -2358,6 +2358,7 @@ async function enrichRecentAccess(recent) {
       time: r.time,
       ip: r.ip,
       ua: r.ua,
+      auth: r.auth || 'visitor',
       location: await lookupIPLocation(r.ip)
     });
   }
@@ -2707,11 +2708,19 @@ function handleStats(req, res) {
   if (!config.dailyVisits) config.dailyVisits = {};
   config.dailyVisits[todayKey] = (config.dailyVisits[todayKey] || 0) + 1;
   // Track recent access (keep last 60)
+  // Detect auth type from session cookie
+  let auth = 'visitor';
+  const admin = getSessionAdmin(req);
+  if (admin) {
+    auth = admin.role === 'root' ? 'root' : 'admin';
+  }
+
   if (!config.recentAccess) config.recentAccess = [];
   config.recentAccess.unshift({
     time: new Date().toISOString(),
     ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
-    ua: (req.headers['user-agent'] || '').substring(0, 120)
+    ua: (req.headers['user-agent'] || '').substring(0, 120),
+    auth
   });
   if (config.recentAccess.length > 60) config.recentAccess.length = 60;
   saveConfig(config);
