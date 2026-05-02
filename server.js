@@ -1471,19 +1471,16 @@ function _writeNotices(notices) {
 // Promise-based write mutex — serializes all read-modify-write to prevent race conditions
 let _writeMutex = Promise.resolve();
 
-async function modifyNotices(modifier) {
-  return new Promise((resolve, reject) => {
-    _writeMutex = _writeMutex.then(async () => {
-      try {
-        const notices = readNotices();
-        const result = await modifier(notices);
-        _writeNotices(result);
-        resolve(result);
-      } catch (e) {
-        reject(e);
-      }
-    });
+function modifyNotices(modifier) {
+  const result = _writeMutex.then(async () => {
+    const notices = readNotices();
+    const updated = await modifier(notices);
+    _writeNotices(updated);
+    return updated;
   });
+  // Keep the chain alive even if one operation fails
+  _writeMutex = result.catch(() => {});
+  return result;
 }
 
 // ============ Auth Handlers ============
