@@ -1007,17 +1007,27 @@
 
     async function deleteNotice(id) {
       if (!confirm('确定删除这条通知?')) return;
-      const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
-      if (res.ok) await fetchNotices();
+      try {
+        const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+        if (res.ok) { await fetchNotices(); return; }
+        if (res.status === 401) { alert('登录已过期，请重新登录'); state.isAdmin = false; state.adminUsername = ''; state.adminRole = ''; render(); return; }
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || '删除失败');
+      } catch(e) { alert('删除失败：' + e.message); }
     }
 
     async function updateNotice(id, updates) {
-      const res = await fetch(`${API}/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-      if (res.ok) await fetchNotices();
+      try {
+        const res = await fetch(`${API}/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates),
+        });
+        if (res.ok) { await fetchNotices(); return; }
+        if (res.status === 401) { alert('登录已过期，请重新登录'); state.isAdmin = false; state.adminUsername = ''; state.adminRole = ''; render(); return; }
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || '修改失败');
+      } catch(e) { alert('修改失败：' + e.message); }
     }
 
     // ============ Content Processing ============

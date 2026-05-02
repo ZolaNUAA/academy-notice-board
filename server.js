@@ -1501,12 +1501,15 @@ function parseCookies(req) {
   return cookies;
 }
 
-function buildSessionCookie(token, maxAgeSeconds) {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${secure}`;
+function isHttps(req) {
+  return !!(req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https');
 }
 
-function createSession(admin) {
+function buildSessionCookie(token, maxAgeSeconds, secure) {
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${secure ? '; Secure' : ''}`;
+}
+
+function createSession(admin, req) {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = Date.now() + SESSION_TTL_MS;
   sessions.set(token, {
@@ -1514,7 +1517,7 @@ function createSession(admin) {
     role: admin.role,
     expiresAt
   });
-  return { token, expiresAt };
+  return { token, expiresAt, secure: isHttps(req) };
 }
 
 function getSessionAdmin(req) {
@@ -1661,7 +1664,7 @@ async function handleLogin(req, res) {
     const admin = checkAdminPassword(password);
 
     if (admin) {
-      const session = createSession(admin);
+      const session = createSession(admin, req);
       recordLoginSuccess(ip);
       logOperation('LOGIN', {
         username: admin.username,
@@ -1670,7 +1673,7 @@ async function handleLogin(req, res) {
         userAgent: ua
       });
       sendJSON(res, 200, { success: true, username: admin.username, role: admin.role }, {
-        'Set-Cookie': buildSessionCookie(session.token, Math.floor(SESSION_TTL_MS / 1000))
+        'Set-Cookie': buildSessionCookie(session.token, Math.floor(SESSION_TTL_MS / 1000), session.secure)
       });
     } else {
       recordLoginFail(ip);
@@ -1687,7 +1690,7 @@ function handleLogout(req, res) {
   const token = parseCookies(req)[SESSION_COOKIE];
   if (token) sessions.delete(token);
   sendJSON(res, 200, { success: true }, {
-    'Set-Cookie': buildSessionCookie('', 0)
+    'Set-Cookie': buildSessionCookie('', 0, isHttps(req))
   });
 }
 
@@ -1782,11 +1785,13 @@ async function handleChangePassword(req, res) {
 
 // ============ HTTP Handlers ============
 function sendJSON(res, status, data, extraHeaders = {}) {
-  res.writeHead(status, {
+  const headers = {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': extraHeaders['Set-Cookie'] ? '' : '*',
     ...extraHeaders
-  });
+  };
+  if (!headers['Access-Control-Allow-Origin']) delete headers['Access-Control-Allow-Origin'];
+  res.writeHead(status, headers);
   res.end(JSON.stringify(data));
 }
 
