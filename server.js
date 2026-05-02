@@ -2485,10 +2485,15 @@ function handleStats(req, res) {
   // Per-type counts for filter labels
   const typeCounts = {};
   const ALL_TYPES = ['科研','教学','研究生','学工','党务','人事','保密','国资','安全','国合','全院','其他'];
-  for (const t of ALL_TYPES) typeCounts[t] = 0;
+  // Active and expired type counts
+  const activeTypeCounts = {}; for (const t of ALL_TYPES) activeTypeCounts[t] = 0;
+  const expiredTypeCounts = {}; for (const t of ALL_TYPES) expiredTypeCounts[t] = 0;
   for (const n of notices) {
-    if (typeCounts[n.type] !== undefined) typeCounts[n.type]++;
+    if (n.expired && expiredTypeCounts[n.type] !== undefined) expiredTypeCounts[n.type]++;
+    else if (!n.expired && activeTypeCounts[n.type] !== undefined) activeTypeCounts[n.type]++;
   }
+  // Keep typeCounts for backward compat (all notices)
+  for (const t of ALL_TYPES) typeCounts[t] = activeTypeCounts[t] + expiredTypeCounts[t];
 
   const activeNotices = notices.filter(n => !n.expired).length;
   const expiredNotices = notices.filter(n => n.expired).length;
@@ -2500,6 +2505,8 @@ function handleStats(req, res) {
     activeNotices,
     expiredNotices,
     typeCounts,
+    activeTypeCounts,
+    expiredTypeCounts,
     version: cachedVersion ? cachedVersion.version : (process.env.DEPLOY_VERSION || getGitShortHash()),
     versionDate: cachedVersion ? cachedVersion.date : (process.env.DEPLOY_DATE || getGitCommitDate() || SERVER_START_TIME),
     indexHtmlTime: (() => {

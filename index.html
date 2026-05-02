@@ -870,6 +870,8 @@
       pendingAttachments: [], // 待上传的附件（仅文件名）
       stats: null,
       typeCounts: null,
+      activeTypeCounts: null,
+      expiredTypeCounts: null,
       darkMode: localStorage.getItem('darkMode') === 'true',
       // Pagination
       currentPage: 1,
@@ -992,6 +994,8 @@
           const data = await res.json();
           state.stats = data;
           if (data.typeCounts) state.typeCounts = data.typeCounts;
+          if (data.activeTypeCounts) state.activeTypeCounts = data.activeTypeCounts;
+          if (data.expiredTypeCounts) state.expiredTypeCounts = data.expiredTypeCounts;
         }
       } catch(e) { console.error(e); }
     }
@@ -1387,7 +1391,7 @@
               value="${state.search}" onkeydown="if(event.key==='Enter')doSearch()">
             <button type="button" class="btn btn-secondary" onclick="doSearch()">🔍 搜索</button>
             <label class="filter-checkbox">
-              <input type="checkbox" ${state.showExpired?'checked':''} onchange="state.showExpired=this.checked;fetchNotices()">
+              <input type="checkbox" ${state.showExpired?'checked':''} onchange="state.showExpired=this.checked;fetchNotices();fetchStats()">
               显示过期
             </label>
             <select class="sort-select" onchange="state.sortBy=this.value;fetchNotices()">
@@ -1399,16 +1403,18 @@
           </div>
 
           <div class="category-filters">
-            <button type="button" class="category-chip ${state.selectedType==='all'?'active':''}" onclick="state.selectedType='all';fetchNotices()">
-              全部 ${state.typeCounts ? '(' + Object.values(state.typeCounts).reduce((a,b)=>a+b,0) + ')' : ''}
-            </button>
-            ${ALL_TYPES.map(t => {
-              const cnt = (state.typeCounts && state.typeCounts[t.name]) || 0;
+            ${(() => {
+              const tc = state.showExpired ? (state.expiredTypeCounts || {}) : (state.activeTypeCounts || state.typeCounts || {});
+              const total = Object.values(tc).reduce((a,b)=>a+b,0);
               return `
-              <button type="button" class="category-chip ${state.selectedType===t.name?'active':''}" onclick="state.selectedType='${t.name}';fetchNotices()" ${cnt===0?'style="opacity:0.4"':''}>
-                ${getTypeIcon(t.name)} ${t.name} ${cnt > 0 ? '('+cnt+')' : ''}
-              </button>`;
-            }).join('')}
+              <button type="button" class="category-chip ${state.selectedType==='all'?'active':''}" onclick="state.selectedType='all';fetchNotices()">
+                全部 ${total ? '('+total+')' : ''}
+              </button>
+              ${ALL_TYPES.map(t => {
+                const cnt = tc[t.name] || 0;
+                return '<button type="button" class="category-chip ' + (state.selectedType===t.name?'active':'') + '" onclick="state.selectedType=\''+t.name+'\';fetchNotices()" ' + (cnt===0?'style="opacity:0.4"':'') + '>' + getTypeIcon(t.name) + ' ' + t.name + ' ' + (cnt > 0 ? '('+cnt+')' : '') + '</button>';
+              }).join('')}`;
+            })()}
           </div>
 
           ${state.loading ? '<div class="loading">加载中...</div>' : ''}
