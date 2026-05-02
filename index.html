@@ -531,15 +531,28 @@
     .file-upload-label {
       display: inline-flex;
       align-items: center;
-      padding: 8px 14px;
-      background: #f0f0f0;
-      border: 1px dashed #ccc;
-      border-radius: 6px;
+      gap: 6px;
+      padding: 10px 16px;
+      background: #f8fafc;
+      border: 2px dashed #cbd5e1;
+      border-radius: 8px;
       cursor: pointer;
       font-size: 13px;
-      color: #666;
+      color: #64748b;
+      transition: all 0.2s;
     }
-    .file-upload-label:hover { background: #e8e8e8; }
+    .file-upload-label:hover { background: #f1f5f9; border-color: #94a3b8; color: #475569; }
+    .file-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .file-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0;
+      border-radius: 8px; font-size: 13px;
+    }
+    .file-item .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #334155; }
+    .file-item .fsize { font-size: 11px; color: #94a3b8; white-space: nowrap; }
+    .file-item .fremove { cursor: pointer; color: #94a3b8; font-size: 16px; padding: 0 4px; border: none; background: none; }
+    .file-item .fremove:hover { color: #ef4444; }
+    .file-item .fico { font-size: 18px; }
 
     /* Add preview - enhanced */
     .add-preview {
@@ -793,6 +806,9 @@
     body.dark-mode .preview-link:hover { background: #2a4a7f; }
     body.dark-mode .btn-secondary { background: #444; color: #e0e0e0; }
     body.dark-mode .file-upload-label { background: #2d2d44; border-color: #444; color: #a0a0a0; }
+    body.dark-mode .file-item { background: #252540; border-color: #3d3d5c; }
+    body.dark-mode .file-item .fname { color: #c8c8d0; }
+    body.dark-mode .file-item .fsize { color: #6b7280; }
     body.dark-mode .note-attachments .attachment-link { background: #1e3a5f; color: #7ca3f5; }
     body.dark-mode .note-attachments .attachment-link:hover { background: #2a4a7f; }
   </style>
@@ -1411,9 +1427,11 @@
               <div class="file-upload-area">
                 <input type="file" id="addFiles" multiple onchange="handleFilesChange(this.files)">
                 <label for="addFiles" class="file-upload-label">
-                  <span>📎 添加附件</span>
-                  <span id="fileCount" style="color:#888;font-size:12px;margin-left:8px"></span>
+                  <span style="font-size:18px">📎</span>
+                  <span>选择附件文件</span>
                 </label>
+                <span id="fileCount" style="color:#94a3b8;font-size:12px;margin-left:8px"></span>
+                <div id="fileList" class="file-list"></div>
               </div>
               <div id="previewContainer"></div>
               <div class="modal-actions">
@@ -2433,13 +2451,54 @@
       }
     };
 
-    window.handleFilesChange = function(files) {
+    function formatFileSize(bytes) {
+      if (!bytes) return '0 B';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+      return (bytes/(1024*1024)).toFixed(1) + ' MB';
+    }
+
+    function getFileIcon(name) {
+      const ext = (name||'').split('.').pop().toLowerCase();
+      return {pdf:'📄',doc:'📝',docx:'📝',xls:'📊',xlsx:'📊',ppt:'📽️',pptx:'📽️',
+              zip:'📦',rar:'📦','7z':'📦',txt:'📃',jpg:'🖼️',jpeg:'🖼️',png:'🖼️',
+              gif:'🖼️',mp4:'🎬',mp3:'🎵',dwg:'📐',dxf:'📐',step:'⚙️'}[ext] || '📎';
+    }
+
+    function renderFileList() {
+      const listEl = document.getElementById('fileList');
       const countEl = document.getElementById('fileCount');
-      if (countEl) {
-        countEl.textContent = files.length > 0 ? `(${files.length} 个文件)` : '';
+      if (!listEl) return;
+      const files = state.pendingAttachments;
+      if (files.length === 0) {
+        listEl.innerHTML = '';
+        if (countEl) countEl.textContent = '';
+        return;
       }
-      // Store pending attachments info for preview display
+      if (countEl) countEl.textContent = `${files.length} 个文件已选择`;
+      listEl.innerHTML = files.map((f, i) => `
+        <div class="file-item">
+          <span class="fico">${getFileIcon(f.name)}</span>
+          <span class="fname" title="${f.name}">${f.name}</span>
+          <span class="fsize">${formatFileSize(f.size)}</span>
+          <button type="button" class="fremove" onclick="removePendingFile(${i})" title="移除">✕</button>
+        </div>
+      `).join('');
+    }
+
+    window.removePendingFile = function(idx) {
+      state.pendingAttachments.splice(idx, 1);
+      renderFileList();
+      // Also refresh preview if showing
+      const preview = document.getElementById('previewContainer');
+      if (preview && state.addPreview) {
+        renderPreviewForm(preview, state.addPreview, state.addPreview._source === 'llm' ? 'AI解析' : '');
+      }
+    };
+
+    window.handleFilesChange = function(files) {
       state.pendingAttachments = Array.from(files).map(f => ({ name: f.name, size: f.size }));
+      renderFileList();
     };
 
 window.handleLogin = async function() {
