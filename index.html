@@ -1040,8 +1040,41 @@
         return key;
       });
 
-      // Step 3: Escape HTML in text (so literal < and > become &lt; and &gt;)
+      // Step 2b: Preserve AI-added HTML tags (<b>, <u>, <font>, <br>) from LLM body enhancement
+      const aiTagMap = {};
+      let aiIdx = 0;
+      // Preserve opening tags with attributes
+      result = result.replace(/<(b|u|font)(\s[^>]*)?>/gi, (full) => {
+        const key = `__AI_${aiIdx}__`;
+        aiTagMap[key] = full;
+        aiIdx++;
+        return key;
+      });
+      // Preserve closing tags
+      result = result.replace(/<\/(b|u|font)>/gi, (full) => {
+        const key = `__AI_${aiIdx}__`;
+        aiTagMap[key] = full;
+        aiIdx++;
+        return key;
+      });
+
+      // Step 3: Escape HTML in text
       result = escapeHtml(result);
+
+      // Step 3b: Restore AI-added tags
+      for (const [key, html] of Object.entries(aiTagMap)) {
+        result = result.split(key).join(html);
+      }
+
+      // Step 3c: Preserve URLs to prevent date patterns inside URLs from being highlighted
+      const urlMap = {};
+      let urlIdx = 0;
+      result = result.replace(/(https?:\/\/[^\s<>"']+)/g, (full) => {
+        const key = `__URL_${urlIdx}__`;
+        urlMap[key] = `<a href="${full}" target="_blank" class="highlight-link">${full}</a>`;
+        urlIdx++;
+        return key;
+      });
 
       // Step 4: Highlight dates
       result = result.replace(/(\d+月\d+日)/g, '<span class="highlight-date">$1</span>');
@@ -1054,8 +1087,10 @@
         result = result.replace(regex, '<span class="highlight">$1</span>');
       }
 
-      // Step 6: Make URLs clickable
-      result = result.replace(/(https?:\/\/[^\s<）)>"]+)/g, '<a href="$1" target="_blank" class="highlight-link">$1</a>');
+      // Step 5b: Restore URLs (already as clickable links, immune to date highlighting)
+      for (const [key, html] of Object.entries(urlMap)) {
+        result = result.split(key).join(html);
+      }
 
       // Step 7: Restore preserved highlight spans (which contain < and >, now safe as HTML)
       for (const [key, html] of Object.entries(highlightMap)) {
@@ -2240,7 +2275,7 @@
           <div class="edit-field" style="flex:2"><label>负责人</label><input type="text" id="editOwner" value="${escapeHtml(preview.owner)}" oninput="updatePreviewField('owner', this.value)"></div>
         </div>
         <div class="edit-field" style="flex:1"><label>关键信息提取</label><textarea id="editKeyPoints" rows="2" placeholder="每行一条关键信息" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${kp}</textarea></div>
-        ${preview.body ? '<div class="edit-field" style="flex:1"><label>正文</label><textarea id="editBody" rows="4">'+escapeHtml(preview.body)+'</textarea></div>' : ''}
+        ${preview.body ? '<div class="edit-field" style="flex:1"><label>正文</label><textarea id="editBody" rows="6" oninput="updateBodyPreview()">'+escapeHtml(preview.body)+'</textarea><div id="bodyPreview" style="margin-top:6px;padding:10px;background:#fafafa;border:1px solid #e5e7eb;border-radius:6px;max-height:200px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap"></div></div>' : ''}
         ${preview.links&&preview.links.length>0 ? '<div class="edit-links"><label>链接</label>'+preview.links.map(l=>'<a href="'+l+'" target="_blank" class="preview-link" style="margin-right:8px">🔗 '+escapeHtml(l)+'</a>').join('')+'</div>' : ''}
         ${(preview.attachments&&preview.attachments.length>0)||state.pendingAttachments.length>0 ? '<div class="edit-links"><label>附件</label>'+(preview.attachments||[]).map(renderAtt).join('')+state.pendingAttachments.map(renderPend).join('')+'</div>' : ''}
       </div>
@@ -2248,6 +2283,8 @@
         <button type="button" class="btn btn-secondary btn-sm" onclick="handleAIParse()" id="aiParseBtn">🤖 AI智能解析</button>
         <span style="font-size:11px;color:#888" id="aiParseStatus"></span>
       </div>`;
+      // 初始触发body预览
+      if (preview && preview.body) setTimeout(() => updateBodyPreview(), 80);
     }
 
     window.handleAddInput = async function(val) {
@@ -2304,6 +2341,18 @@
       }
     };
 
+
+    window.updateBodyPreview = function() {
+      const textarea = document.getElementById('editBody');
+      const preview = document.getElementById('bodyPreview');
+      if (!textarea || !preview) return;
+      const val = textarea.value;
+      // Render with body images (handles HTML highlights, images)
+      preview.innerHTML = renderBodyWithImages(val);
+      // Auto-resize textarea
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(300, textarea.scrollHeight) + 'px';
+    };
 
     window.updatePreviewField = function(field, value) {
       if (state.addPreview) {
