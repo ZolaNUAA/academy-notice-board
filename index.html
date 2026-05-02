@@ -2336,7 +2336,7 @@
         return `<span class="preview-link" style="margin-right:8px;color:#888">${icoMap[ext.toLowerCase()]||'📎'} ${escapeHtml(a.name)} (待上传)</span>`;
       };
 
-      container.innerHTML = `<h3 class="section-title">📌 便签预览 ${srcHtml}</h3>
+      container.innerHTML = `<h3 style="font-size:16px;color:#1f2937;margin:0 0 12px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:6px">📌 便签预览 ${srcHtml}</h3>
         <div class="add-preview edit-form">
           <div style="padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;${warnStyle}"><strong>${warnIcon} ${warnTitle}</strong>${warningsHtml}</div>
           <div class="edit-row">
