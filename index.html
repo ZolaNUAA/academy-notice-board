@@ -1817,6 +1817,20 @@
           </div>
         </div>
 
+        <div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);padding:20px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.05);border:1px solid #86efac;margin-bottom:16px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:#166534">📅 日历订阅（手机自动同步截止日期）</div>
+          <div style="font-size:13px;color:#666;line-height:1.8;margin-bottom:8px">
+            复制以下地址，在手机日历中添加"订阅日历"或"URL日历"，所有通知截止日期自动同步到手机。
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="text" id="calendarFeedUrl" readonly value="${window.location.origin}/api/calendar-feed.ics" style="flex:1;min-width:200px;padding:8px 12px;border:1px solid #86efac;border-radius:6px;font-size:12px;color:#166534;background:#f0fdf4;font-family:monospace">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyCalendarFeedUrl()">📋 复制</button>
+          </div>
+          <div style="font-size:11px;color:#888;margin-top:8px">
+            iPhone: 设置→日历→账户→添加账户→其他→添加订阅日历 | Android: 谷歌日历→设置→添加日历→通过网址
+          </div>
+        </div>
+
         <div style="background:linear-gradient(135deg,#dbeafe,#eff6ff);padding:20px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.05);border:1px solid #93c5fd">
           <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:#1d4ed8">🔗 微信群Webhook接入</div>
           <div style="font-size:13px;color:#666;line-height:1.8">
@@ -2318,6 +2332,11 @@
     };
 
     // Webhook functions
+    window.copyCalendarFeedUrl = function() {
+      const url = document.getElementById('calendarFeedUrl').value;
+      navigator.clipboard.writeText(url).then(() => alert('日历订阅地址已复制！'));
+    };
+
     window.copyWebhookUrl = function() {
       const url = document.getElementById('webhookUrl').value;
       navigator.clipboard.writeText(url).then(() => alert('Webhook地址已复制！'));

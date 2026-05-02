@@ -2693,6 +2693,59 @@ function handleCalendarDownload(req, res, id) {
   res.end(ics);
 }
 
+// Calendar feed: returns .ics with all active notices that have deadlines
+// Phone can subscribe to this URL for auto-updating calendar
+function handleCalendarFeed(req, res) {
+  const notices = readNotices();
+  const active = notices.filter(n => n.deadline && !n.expired);
+  const now = new Date().toISOString().replace(/[-:]/g, '').substring(0, 15) + 'Z';
+  const escICal = s => String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n').substring(0, 300);
+
+  const events = active.map(n => {
+    const m = String(n.deadline).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    const pad = s => String(s).padStart(2, '0');
+    const dStart = `${m[1]}${m[2]}${m[3]}`;
+    const dl = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    dl.setDate(dl.getDate() + 1);
+    const dEnd = `${dl.getFullYear()}${pad(dl.getMonth()+1)}${pad(dl.getDate())}`;
+    return [
+      'BEGIN:VEVENT',
+      `UID:${escICal(n.id)}@nuaa-feed`,
+      `DTSTART;VALUE=DATE:${dStart}`,
+      `DTEND;VALUE=DATE:${dEnd}`,
+      `DTSTAMP:${now}`,
+      `SUMMARY:${escICal(n.title)}`,
+      `DESCRIPTION:${escICal((n.body || '').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim().substring(0,200))}`,
+      'BEGIN:VALARM',
+      'TRIGGER:-PT12H',
+      'ACTION:DISPLAY',
+      `DESCRIPTION:${escICal(n.title)}`,
+      'END:VALARM',
+      'END:VEVENT'
+    ].join('\r\n');
+  }).filter(Boolean).join('\r\n');
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Academy Notice Board//Calendar Feed//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:学院通知截止提醒',
+    'X-WR-CALDESC:学院通知便利贴看板 — 截止日期提醒',
+    `REFRESH-INTERVAL;VALUE=DURATION:PT12H`,
+    events,
+    'END:VCALENDAR'
+  ].filter(Boolean).join('\r\n') + '\r\n';
+
+  res.writeHead(200, {
+    'Content-Type': 'text/calendar; charset=utf-8',
+    'Cache-Control': 'public, max-age=3600'
+  });
+  res.end(ics);
+}
+
 function handleDELETE(req, res, id) {
   let deleted = false;
   modifyNotices(notices => {
@@ -2789,6 +2842,11 @@ const server = http.createServer((req, res) => {
     });
     res.end();
     return;
+  }
+
+  // Calendar feed: URL subscription for phone calendar (all active deadlines)
+  if (url.pathname === '/api/calendar-feed.ics') {
+    if (req.method === 'GET') return handleCalendarFeed(req, res);
   }
 
   // Calendar download (add to phone calendar)
