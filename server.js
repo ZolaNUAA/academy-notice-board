@@ -2347,6 +2347,7 @@ function lookupIPLocation(ip) {
   if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
     return Promise.resolve('内网');
   }
+  // Return cached result if available (including '未知' from successful API response)
   if (_ipLocationCache.has(ip)) {
     return Promise.resolve(_ipLocationCache.get(ip));
   }
@@ -2362,14 +2363,24 @@ function lookupIPLocation(ip) {
             _ipLocationCache.set(ip, loc || '未知');
             resolve(loc || '未知');
           } else {
-            _ipLocationCache.set(ip, '未知');
+            _ipLocationCache.set(ip, '未知'); // API reachable but no city — cache to avoid hammering
             resolve('未知');
           }
-        } catch { _ipLocationCache.set(ip, '未知'); resolve('未知'); }
+        } catch {
+          _ipLocationCache.set(ip, '未知'); // API returned garbage — cache as unknown
+          resolve('未知');
+        }
       });
     });
-    req.on('error', () => resolve('未知'));
-    req.setTimeout(3000, () => { req.destroy(); resolve('未知'); });
+    req.on('error', () => {
+      // Network error — don't cache, allow retry on next refresh
+      resolve('未知');
+    });
+    req.setTimeout(3000, () => {
+      req.destroy();
+      // Timeout — don't cache, allow retry on next refresh
+      resolve('超时');
+    });
   });
 }
 
