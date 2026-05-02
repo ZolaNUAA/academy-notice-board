@@ -2197,6 +2197,54 @@
       render();
     };
 
+    // 预览表单渲染（handleAddInput 和 handleAIParse 共用）
+    function renderPreviewForm(container, preview, sourceLabel) {
+      if (!preview) { container.innerHTML = ''; return; }
+      const diag = preview._diagnostics || {};
+      const conf = diag.confidence || 'high';
+      const warnIcon = conf === 'low' ? '⚠️' : conf === 'medium' ? '💡' : '✅';
+      const warnTitle = conf === 'low' ? '解析结果置信度较低，请检查' :
+                        conf === 'medium' ? '部分字段可能需要确认' : '解析结果看起来正常';
+      const warnStyle = conf === 'low' ? 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca' :
+                        conf === 'medium' ? 'background:#fffbeb;color:#d97706;border:1px solid #fde68a' :
+                        'background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0';
+      const srcHtml = sourceLabel ? ` <span style="font-size:11px;color:#888;font-weight:400">(${sourceLabel})</span>` : '';
+      const warningsHtml = (diag.warnings && diag.warnings.length > 0) ? `<div style="margin-top:6px;font-size:12px;line-height:1.6">${diag.warnings.map(w => '<div>• ' + w + '</div>').join('')}</div>` : '';
+      const kp = ((preview.keyPoints && preview.keyPoints.length > 0) ? preview.keyPoints : []).join('\n');
+      const types = ['科研','教学','研究生','学工','党务','人事','保密','国资','安全','国合','全院','其他'];
+      const icoMap = {pdf:'📄',doc:'📝',docx:'📝',xls:'📊',xlsx:'📊',ppt:'📽️',pptx:'📽️',zip:'📦',rar:'📦','7z':'📦',txt:'📃',jpg:'🖼️',jpeg:'🖼️',png:'🖼️',gif:'🖼️',mp4:'🎬',mp3:'🎵'};
+      const renderAtt = a => {
+        const ext = (a.name||'').split('.').pop()||'';
+        return `<a href="${a.url}" target="_blank" class="preview-link" style="margin-right:8px">${icoMap[ext.toLowerCase()]||'📎'} ${escapeHtml(a.name||'文件')}</a>`;
+      };
+      const renderPend = a => {
+        const ext = (a.name||'').split('.').pop()||'';
+        return `<span class="preview-link" style="margin-right:8px;color:#888">${icoMap[ext.toLowerCase()]||'📎'} ${escapeHtml(a.name)} (待上传)</span>`;
+      };
+
+      container.innerHTML = `<div class="add-preview edit-form">
+        <div style="padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;${warnStyle}"><strong>${warnIcon} ${warnTitle}</strong>${srcHtml}${warningsHtml}</div>
+        <div class="edit-row">
+          <div class="edit-field" style="flex:2"><label>标题</label><input type="text" id="editTitle" value="${escapeHtml(preview.title)}" oninput="updatePreviewField('title', this.value)"></div>
+          <div class="edit-field"><label>类型</label><select id="editType" onchange="updatePreviewField('type', this.value)">${types.map(t => '<option value="'+t+'" '+(preview.type===t?'selected':'')+'>'+t+'</option>').join('')}</select></div>
+          <div class="edit-field"><label>重要性</label><select id="editImportance" onchange="updatePreviewField('importance', parseInt(this.value))"><option value="1" ${preview.importance===1?'selected':''}>⭐ 低</option><option value="2" ${preview.importance===2?'selected':''}>⭐⭐ 中</option><option value="3" ${preview.importance===3?'selected':''}>⭐⭐⭐ 高</option></select></div>
+        </div>
+        <div class="edit-row">
+          <div class="edit-field"><label>发布时间</label><input type="date" id="editPublishDate" value="${preview.publishDate||''}" oninput="updatePreviewField('publishDate', this.value)"></div>
+          <div class="edit-field"><label>截止日期</label><input type="date" id="editDeadline" value="${preview.deadline||''}" oninput="updatePreviewField('deadline', this.value)"></div>
+          <div class="edit-field" style="flex:2"><label>负责人</label><input type="text" id="editOwner" value="${escapeHtml(preview.owner)}" oninput="updatePreviewField('owner', this.value)"></div>
+        </div>
+        <div class="edit-field" style="flex:1"><label>关键信息提取</label><textarea id="editKeyPoints" rows="2" placeholder="每行一条关键信息" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${kp}</textarea></div>
+        ${preview.body ? '<div class="edit-field" style="flex:1"><label>正文</label><textarea id="editBody" rows="4">'+escapeHtml(preview.body)+'</textarea></div>' : ''}
+        ${preview.links&&preview.links.length>0 ? '<div class="edit-links"><label>链接</label>'+preview.links.map(l=>'<a href="'+l+'" target="_blank" class="preview-link" style="margin-right:8px">🔗 '+escapeHtml(l)+'</a>').join('')+'</div>' : ''}
+        ${(preview.attachments&&preview.attachments.length>0)||state.pendingAttachments.length>0 ? '<div class="edit-links"><label>附件</label>'+(preview.attachments||[]).map(renderAtt).join('')+state.pendingAttachments.map(renderPend).join('')+'</div>' : ''}
+      </div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="handleAIParse()" id="aiParseBtn">🤖 AI智能解析</button>
+        <span style="font-size:11px;color:#888" id="aiParseStatus"></span>
+      </div>`;
+    }
+
     window.handleAddInput = async function(val) {
       const container = document.getElementById('previewContainer');
       if (!val.trim()) {
@@ -2205,112 +2253,13 @@
         return;
       }
       try {
-        const res = await fetch('/api/preview', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: val }),
-        });
+        const res = await fetch('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: val }) });
         const data = await res.json();
         const preview = data.notices ? data.notices[0] : null;
-        // 后端已返回 keyPoints 和 _diagnostics，无需前端重新提取
         state.addPreview = preview;
-        if (preview) {
-          const diag = preview._diagnostics || {};
-          const warnIcon = diag.confidence === 'low' ? '⚠️' : diag.confidence === 'medium' ? '💡' : '✅';
-          const warnTitle = diag.confidence === 'low' ? '解析结果置信度较低，请检查' :
-                            diag.confidence === 'medium' ? '部分字段可能需要确认' : '解析结果看起来正常';
-          const warnStyle = diag.confidence === 'low' ? 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca' :
-                            diag.confidence === 'medium' ? 'background:#fffbeb;color:#d97706;border:1px solid #fde68a' :
-                            'background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0';
-          const warningsHtml = (diag.warnings && diag.warnings.length > 0) ? `
-            <div style="margin-top:6px;font-size:12px;line-height:1.6">
-              ${diag.warnings.map(w => `<div>• ${w}</div>`).join('')}
-            </div>
-          ` : '';
-
-          container.innerHTML = `
-            <div class="add-preview edit-form">
-              <div style="padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;${warnStyle}">
-                <strong>${warnIcon} ${warnTitle}</strong>${warningsHtml}
-              </div>
-              <div class="edit-row">
-                <div class="edit-field" style="flex:2">
-                  <label>标题</label>
-                  <input type="text" id="editTitle" value="${escapeHtml(preview.title)}" oninput="updatePreviewField('title', this.value)">
-                </div>
-                <div class="edit-field">
-                  <label>类型</label>
-                  <select id="editType" onchange="updatePreviewField('type', this.value)">
-                    ${['科研','教学','研究生','学工','党务','人事','保密','国资','安全','国合','全院','其他'].map(t =>
-                      `<option value="${t}" ${preview.type===t?'selected':''}>${t}</option>`
-                    ).join('')}
-                  </select>
-                </div>
-                <div class="edit-field">
-                  <label>重要性</label>
-                  <select id="editImportance" onchange="updatePreviewField('importance', parseInt(this.value))">
-                    <option value="1" ${preview.importance===1?'selected':''}>⭐ 低</option>
-                    <option value="2" ${preview.importance===2?'selected':''}>⭐⭐ 中</option>
-                    <option value="3" ${preview.importance===3?'selected':''}>⭐⭐⭐ 高</option>
-                  </select>
-                </div>
-              </div>
-              <div class="edit-row">
-                <div class="edit-field">
-                  <label>发布时间</label>
-                  <input type="date" id="editPublishDate" value="${preview.publishDate || ''}" oninput="updatePreviewField('publishDate', this.value)">
-                </div>
-                <div class="edit-field">
-                  <label>截止日期</label>
-                  <input type="date" id="editDeadline" value="${preview.deadline || ''}" oninput="updatePreviewField('deadline', this.value)">
-                </div>
-                <div class="edit-field" style="flex:2">
-                  <label>负责人</label>
-                  <input type="text" id="editOwner" value="${escapeHtml(preview.owner)}" oninput="updatePreviewField('owner', this.value)">
-                </div>
-              </div>
-              <div class="edit-field" style="flex:1">
-                <label>关键信息提取</label>
-                <textarea id="editKeyPoints" rows="2" placeholder="每行一条关键信息，支持拖动调整顺序" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${((preview.keyPoints && preview.keyPoints.length > 0) ? preview.keyPoints : []).join('\n')}</textarea>
-              </div>
-              ${preview.body ? `<div class="edit-field" style="flex:1">
-                <label>正文</label>
-                <textarea id="editBody" rows="4">${escapeHtml(preview.body)}</textarea>
-              </div>` : ''}
-              ${preview.links && preview.links.length > 0 ? `
-                <div class="edit-links">
-                  <label>链接</label>
-                  ${preview.links.map((l, i) => `<a href="${l}" target="_blank" class="preview-link" style="margin-right:8px">🔗 ${escapeHtml(l)}</a>`).join('')}
-                </div>
-              ` : ''}
-              ${(preview.attachments && preview.attachments.length > 0) || state.pendingAttachments.length > 0 ? `
-                <div class="edit-links">
-                  <label>附件</label>
-                  ${(preview.attachments || []).map(a => {
-                    const ext = (a.name || '').split('.').pop() || '';
-                    const iconMap = { pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️', zip: '📦', rar: '📦', '7z': '📦', txt: '📃', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', mp4: '🎬', mp3: '🎵' };
-                    const icon = iconMap[ext.toLowerCase()] || '📎';
-                    return `<a href="${a.url}" target="_blank" class="preview-link" style="margin-right:8px">${icon} ${escapeHtml(a.name || '文件')}</a>`;
-                  }).join('')}
-                  ${state.pendingAttachments.map(a => {
-                    const ext = (a.name || '').split('.').pop() || '';
-                    const iconMap = { pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️', zip: '📦', rar: '📦', '7z': '📦', txt: '📃', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', mp4: '🎬', mp3: '🎵' };
-                    const icon = iconMap[ext.toLowerCase()] || '📎';
-                    return `<span class="preview-link" style="margin-right:8px;color:#888">${icon} ${escapeHtml(a.name)} (待上传)</span>`;
-                  }).join('')}
-                </div>
-              ` : ''}
-            </div>
-            <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
-              <button type="button" class="btn btn-secondary btn-sm" onclick="handleAIParse()" id="aiParseBtn">🤖 AI智能解析</button>
-              <span style="font-size:11px;color:#888" id="aiParseStatus"></span>
-            </div>
-          `;
-        } else {
-          container.innerHTML = '';
-        }
+        renderPreviewForm(container, preview, '');
       } catch(e) {
-        container.innerHTML = '';
+        container.innerHTML = '<div style="color:#dc2626;padding:20px;text-align:center">解析失败: ' + e.message + '</div>';
         state.addPreview = null;
       }
     };
@@ -2336,46 +2285,8 @@
         const data = await res.json();
         if (data.notices && data.notices.length > 0) {
           state.addPreview = data.notices[0];
-          // Re-render preview by calling handleAddInput which rebuilds the form
-          // We need to temporarily bypass the API call
           const container = document.getElementById('previewContainer');
-          if (container && state.addPreview) {
-            const preview = state.addPreview;
-            const diag = preview._diagnostics || {};
-            const warnIcon = diag.confidence === 'low' ? '⚠️' : diag.confidence === 'medium' ? '💡' : '✅';
-            const warnTitle = diag.confidence === 'low' ? '解析结果置信度较低，请检查' :
-                              diag.confidence === 'medium' ? '部分字段可能需要确认' : '解析结果看起来正常';
-            const warnStyle = diag.confidence === 'low' ? 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca' :
-                              diag.confidence === 'medium' ? 'background:#fffbeb;color:#d97706;border:1px solid #fde68a' :
-                              'background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0';
-            const sourceTag = preview._source === 'llm' ? ' (AI解析)' : '';
-            const warningsHtml = (diag.warnings && diag.warnings.length > 0) ? `
-              <div style="margin-top:6px;font-size:12px;line-height:1.6">${diag.warnings.map(w => `<div>• ${w}</div>`).join('')}</div>` : '';
-            container.innerHTML = `
-              <div class="add-preview edit-form">
-                <div style="padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;${warnStyle}">
-                  <strong>${warnIcon} ${warnTitle}${sourceTag}</strong>${warningsHtml}
-                </div>
-                <div class="edit-row">
-                  <div class="edit-field" style="flex:2"><label>标题</label><input type="text" id="editTitle" value="${escapeHtml(preview.title)}" oninput="updatePreviewField('title', this.value)"></div>
-                  <div class="edit-field"><label>类型</label><select id="editType" onchange="updatePreviewField('type', this.value)">${['科研','教学','研究生','学工','党务','人事','保密','国资','安全','国合','全院','其他'].map(t => `<option value="${t}" ${preview.type===t?'selected':''}>${t}</option>`).join('')}</select></div>
-                  <div class="edit-field"><label>重要性</label><select id="editImportance" onchange="updatePreviewField('importance', parseInt(this.value))"><option value="1" ${preview.importance===1?'selected':''}>⭐ 低</option><option value="2" ${preview.importance===2?'selected':''}>⭐⭐ 中</option><option value="3" ${preview.importance===3?'selected':''}>⭐⭐⭐ 高</option></select></div>
-                </div>
-                <div class="edit-row">
-                  <div class="edit-field"><label>发布时间</label><input type="date" id="editPublishDate" value="${preview.publishDate || ''}" oninput="updatePreviewField('publishDate', this.value)"></div>
-                  <div class="edit-field"><label>截止日期</label><input type="date" id="editDeadline" value="${preview.deadline || ''}" oninput="updatePreviewField('deadline', this.value)"></div>
-                  <div class="edit-field" style="flex:2"><label>负责人</label><input type="text" id="editOwner" value="${escapeHtml(preview.owner)}" oninput="updatePreviewField('owner', this.value)"></div>
-                </div>
-                <div class="edit-field" style="flex:1"><label>关键信息提取</label><textarea id="editKeyPoints" rows="2" placeholder="每行一条关键信息" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px">${((preview.keyPoints && preview.keyPoints.length > 0) ? preview.keyPoints : []).join('\n')}</textarea></div>
-                ${preview.body ? `<div class="edit-field" style="flex:1"><label>正文</label><textarea id="editBody" rows="4">${escapeHtml(preview.body)}</textarea></div>` : ''}
-                ${preview.links && preview.links.length > 0 ? `<div class="edit-links"><label>链接</label>${preview.links.map(l => `<a href="${l}" target="_blank" class="preview-link" style="margin-right:8px">🔗 ${escapeHtml(l)}</a>`).join('')}</div>` : ''}
-              </div>
-              <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="handleAIParse()" id="aiParseBtn">🤖 AI智能解析</button>
-                <span style="font-size:11px;color:#888" id="aiParseStatus"></span>
-              </div>
-            `;
-          }
+          renderPreviewForm(container, state.addPreview, 'AI解析');
           if (status) { status.textContent = '✅ AI解析完成'; status.style.color = '#16a34a'; }
         } else {
           if (status) { status.textContent = '❌ ' + (data.error || '解析返回空结果'); status.style.color = '#dc2626'; }
@@ -2387,6 +2298,7 @@
         btn.textContent = '🤖 AI智能解析';
       }
     };
+
 
     window.updatePreviewField = function(field, value) {
       if (state.addPreview) {
