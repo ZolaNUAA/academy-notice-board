@@ -2952,6 +2952,7 @@ window.handleLogin = async function() {
         state.adminRole = loginData.role || 'admin';
         state.viewMode = 'sticky';
         render();
+        fetchStats(); // record authenticated visit with admin session cookie
         return;
       }
 
