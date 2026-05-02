@@ -1464,9 +1464,26 @@ function readNotices() {
   } catch { return []; }
 }
 
-function writeNotices(notices) {
+function _writeNotices(notices) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(notices, null, 2), 'utf-8');
-  // GitHub backup disabled - data stored in Tencent Cloud COS
+}
+
+// Promise-based write mutex — serializes all read-modify-write to prevent race conditions
+let _writeMutex = Promise.resolve();
+
+async function modifyNotices(modifier) {
+  return new Promise((resolve, reject) => {
+    _writeMutex = _writeMutex.then(async () => {
+      try {
+        const notices = readNotices();
+        const result = await modifier(notices);
+        _writeNotices(result);
+        resolve(result);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
 }
 
 // ============ Auth Handlers ============
@@ -2036,9 +2053,7 @@ function handlePOST(req, res) {
           newNotices[0].attachments = attachments;
         }
 
-        const existing = readNotices();
-        const all = [...existing, ...newNotices];
-        writeNotices(all);
+        await modifyNotices(existing => [...existing, ...newNotices]);
         sendJSON(res, 200, { success: true, count: newNotices.length, notices: newNotices });
       } catch(e) {
         console.error('Upload error:', e.message);
@@ -2054,9 +2069,7 @@ function handlePOST(req, res) {
         const parserConfig = config.parser;
         const useLLM = parserConfig.enabled && parserConfig.useOnSubmit;
         const newNotices = await dispatchParse(text, useLLM ? parserConfig : null);
-        const existing = readNotices();
-        const all = [...existing, ...newNotices];
-        writeNotices(all);
+        await modifyNotices(existing => [...existing, ...newNotices]);
         sendJSON(res, 200, { success: true, count: newNotices.length, notices: newNotices });
       } catch(e) {
         console.error('POST error:', e.message);
@@ -2125,14 +2138,12 @@ async function handleAddDirect(req, res) {
       const attachments = notice._attachments || [];
       delete notice._attachments;
 
-      const existing = readNotices();
       if (attachments.length > 0) {
         notice.attachments = attachments;
       }
       notice.id = `n-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
       notice.expired = notice.deadline ? new Date(notice.deadline) < new Date() : false;
-      existing.push(notice);
-      writeNotices(existing);
+      await modifyNotices(existing => { existing.push(notice); return existing; });
       sendJSON(res, 200, { success: true, notice });
     } catch(e) {
       sendJSON(res, 500, { error: 'Add error: ' + e.message });
@@ -2157,16 +2168,12 @@ async function handleWebhook(req, res) {
       const parserConfig = config.parser;
       const useLLM = parserConfig.enabled && parserConfig.useOnSubmit;
       const notices = await dispatchParse(text, useLLM ? parserConfig : null);
-      const existing = readNotices();
       const now = new Date();
-
       for (const n of notices) {
         n.id = `n-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
         n.expired = n.deadline ? new Date(n.deadline) < now : false;
-        existing.push(n);
       }
-
-      writeNotices(existing);
+      await modifyNotices(existing => { existing.push(...notices); return existing; });
       sendJSON(res, 200, { success: true, count: notices.length, notices });
     } catch(e) {
       sendJSON(res, 500, { error: 'Webhook error: ' + e.message });
@@ -2499,11 +2506,15 @@ function handleStats(req, res) {
 }
 
 function handleDELETE(req, res, id) {
-  const notices = readNotices();
-  const filtered = notices.filter(n => n.id !== id);
-  if (filtered.length === notices.length) return sendJSON(res, 404, { error: 'Not found' });
-  writeNotices(filtered);
-  sendJSON(res, 200, { success: true });
+  let deleted = false;
+  modifyNotices(notices => {
+    const filtered = notices.filter(n => n.id !== id);
+    if (filtered.length < notices.length) deleted = true;
+    return filtered;
+  }).then(() => {
+    if (!deleted) return sendJSON(res, 404, { error: 'Not found' });
+    sendJSON(res, 200, { success: true });
+  }).catch(e => sendJSON(res, 500, { error: 'Delete error' }));
 }
 
 function handlePATCH(req, res, id) {
@@ -2512,16 +2523,21 @@ function handlePATCH(req, res, id) {
   req.on('end', () => {
     try {
       const updates = JSON.parse(body);
-      const notices = readNotices();
-      const idx = notices.findIndex(n => n.id === id);
-      if (idx === -1) return sendJSON(res, 404, { error: 'Not found' });
-      // Recalc expired if deadline changed
-      if (updates.deadline !== undefined) {
-        updates.expired = updates.deadline ? new Date(updates.deadline) < new Date() : false;
-      }
-      notices[idx] = { ...notices[idx], ...updates };
-      writeNotices(notices);
-      sendJSON(res, 200, notices[idx]);
+      let updated = null;
+      let notFound = false;
+      modifyNotices(notices => {
+        const idx = notices.findIndex(n => n.id === id);
+        if (idx === -1) { notFound = true; return notices; }
+        if (updates.deadline !== undefined) {
+          updates.expired = updates.deadline ? new Date(updates.deadline) < new Date() : false;
+        }
+        notices[idx] = { ...notices[idx], ...updates };
+        updated = notices[idx];
+        return notices;
+      }).then(() => {
+        if (notFound) return sendJSON(res, 404, { error: 'Not found' });
+        sendJSON(res, 200, updated);
+      }).catch(e => sendJSON(res, 500, { error: 'Update error' }));
     } catch(e) {
       sendJSON(res, 500, { error: 'Update error' });
     }
