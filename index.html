@@ -2409,7 +2409,7 @@
           ` : ''}
           <div style="font-weight:600;margin-bottom:8px;color:#333">🕐 最近访问</div>
           <div style="font-size:11px">
-            <div style="display:grid;grid-template-columns:minmax(150px,1fr) minmax(54px,60px) minmax(100px,1fr) minmax(60px,80px) 1fr;padding:4px 0;border-bottom:2px solid #e5e7eb;font-weight:600;color:#888;font-size:11px">
+            <div style="display:grid;grid-template-columns:140px 54px 1fr 68px 1fr;padding:4px 0;border-bottom:2px solid #e5e7eb;font-weight:600;color:#888;font-size:11px">
               <span>时间</span>
               <span style="text-align:center">身份</span>
               <span>IP</span>
@@ -2422,7 +2422,7 @@
               const [authLabel, authColor, authBg] = authMap[r.auth] || authMap.visitor;
               const uaShort = (r.ua || '').replace(/Mozilla\/[\d.]+ /,'').replace(/AppleWebKit\/[\d.]+ /,'').replace(/\(KHTML, like Gecko\)/,'');
               return `
-              <div style="display:grid;grid-template-columns:minmax(150px,1fr) minmax(54px,60px) minmax(100px,1fr) minmax(60px,80px) 1fr;align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6;font-size:11px">
+              <div style="display:grid;grid-template-columns:140px 54px 1fr 68px 1fr;align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6;font-size:11px">
                 <span style="color:#3b82f6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${new Date(r.time).toLocaleString('zh-CN')}">${new Date(r.time).toLocaleString('zh-CN')}</span>
                 <span style="text-align:center"><span style="background:${authBg};color:${authColor};padding:1px 5px;border-radius:3px;font-weight:600;white-space:nowrap">${authLabel}</span></span>
                 <span style="color:#888;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.ip || '?'}">${r.ip || '?'}</span>
