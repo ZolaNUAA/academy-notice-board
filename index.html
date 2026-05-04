@@ -1053,6 +1053,22 @@
     // ============ API ============
     const API = '/api/notices';
 
+    // ============ Clipboard helper ============
+    function copyToClipboard(text, successMsg = '已复制！') {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(() => alert(successMsg));
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;opacity:0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        alert(successMsg);
+      }
+    }
+
     async function fetchNotices(append = false) {
       if (!append) {
         state.loading = true;
@@ -2424,19 +2440,17 @@
 
     // Webhook functions
     window.copyCalendarFeedUrl = function() {
-      const url = document.getElementById('calendarFeedUrl').value;
-      navigator.clipboard.writeText(url).then(() => alert('日历订阅地址已复制！'));
+      copyToClipboard(document.getElementById('calendarFeedUrl').value, '日历订阅地址已复制！');
     };
 
     window.copyWebhookUrl = function() {
-      const url = document.getElementById('webhookUrl').value;
-      navigator.clipboard.writeText(url).then(() => alert('Webhook地址已复制！'));
+      copyToClipboard(document.getElementById('webhookUrl').value, 'Webhook地址已复制！');
     };
 
     window.copyWebhookSecret = function() {
       const secret = document.getElementById('webhookSecret').value;
       if (!secret) { alert('请先生成Secret'); return; }
-      navigator.clipboard.writeText(secret).then(() => alert('Secret已复制！'));
+      copyToClipboard(secret, 'Secret已复制！');
     };
 
     window.generateWebhookSecret = async function() {
