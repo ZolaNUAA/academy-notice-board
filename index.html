@@ -2409,12 +2409,12 @@
           ` : ''}
           <div style="font-weight:600;margin-bottom:8px;color:#333">🕐 最近访问</div>
           <div style="font-size:11px">
-            <div style="display:flex;padding:4px 0;border-bottom:2px solid #e5e7eb;font-weight:600;color:#888">
-              <span style="width:148px;flex-shrink:0">时间</span>
-              <span style="width:60px;flex-shrink:0;text-align:center">身份</span>
-              <span style="width:130px;flex-shrink:0">IP</span>
-              <span style="width:72px;flex-shrink:0">属地</span>
-              <span style="flex:1">客户端</span>
+            <div style="display:grid;grid-template-columns:minmax(150px,1fr) minmax(54px,60px) minmax(100px,1fr) minmax(60px,80px) 1fr;padding:4px 0;border-bottom:2px solid #e5e7eb;font-weight:600;color:#888;font-size:11px">
+              <span>时间</span>
+              <span style="text-align:center">身份</span>
+              <span>IP</span>
+              <span>属地</span>
+              <span>客户端</span>
             </div>
             <div style="max-height:200px;overflow-y:auto">
             ${data.recentAccess?.length > 0 ? data.recentAccess.map(r => {
@@ -2422,12 +2422,12 @@
               const [authLabel, authColor, authBg] = authMap[r.auth] || authMap.visitor;
               const uaShort = (r.ua || '').replace(/Mozilla\/[\d.]+ /,'').replace(/AppleWebKit\/[\d.]+ /,'').replace(/\(KHTML, like Gecko\)/,'');
               return `
-              <div style="display:flex;align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6">
-                <span style="width:148px;flex-shrink:0;color:#3b82f6">${new Date(r.time).toLocaleString('zh-CN')}</span>
-                <span style="width:60px;flex-shrink:0;text-align:center"><span style="font-size:10px;background:${authBg};color:${authColor};padding:1px 5px;border-radius:3px;font-weight:600;white-space:nowrap">${authLabel}</span></span>
-                <span style="width:130px;flex-shrink:0;color:#888;font-family:monospace;font-size:11px">${r.ip || '?'}</span>
-                <span style="width:72px;flex-shrink:0;color:#059669">${r.location || ''}</span>
-                <span style="flex:1;color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${uaShort}">${uaShort}</span>
+              <div style="display:grid;grid-template-columns:minmax(150px,1fr) minmax(54px,60px) minmax(100px,1fr) minmax(60px,80px) 1fr;align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6;font-size:11px">
+                <span style="color:#3b82f6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${new Date(r.time).toLocaleString('zh-CN')}">${new Date(r.time).toLocaleString('zh-CN')}</span>
+                <span style="text-align:center"><span style="background:${authBg};color:${authColor};padding:1px 5px;border-radius:3px;font-weight:600;white-space:nowrap">${authLabel}</span></span>
+                <span style="color:#888;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.ip || '?'}">${r.ip || '?'}</span>
+                <span style="color:#059669;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.location || ''}">${r.location || ''}</span>
+                <span style="color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${uaShort}">${uaShort}</span>
               </div>
             `}).join('') : '<div style="color:#888;text-align:center;padding:10px">暂无记录</div>'}
             </div>
