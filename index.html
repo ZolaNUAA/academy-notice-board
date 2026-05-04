@@ -2475,25 +2475,62 @@
       const raw = String(ua || '').trim();
       if (!raw) return '未知客户端';
       const lower = raw.toLowerCase();
-      const browser =
-        lower.includes('micromessenger') ? 'WeChat' :
-        lower.includes('edg/') ? 'Edge' :
-        lower.includes('firefox/') ? 'Firefox' :
-        lower.includes('opr/') || lower.includes('opera') ? 'Opera' :
-        lower.includes('chrome/') && !lower.includes('chromium') ? 'Chrome' :
-        lower.includes('safari/') && !lower.includes('chrome/') ? 'Safari' :
-        lower.includes('curl/') ? 'curl' :
-        lower.includes('bot') || lower.includes('spider') || lower.includes('crawler') ? 'Bot' :
-        '浏览器';
-      const os =
-        lower.includes('iphone') ? 'iPhone' :
-        lower.includes('ipad') ? 'iPad' :
-        lower.includes('android') ? 'Android' :
-        lower.includes('windows') ? 'Windows' :
-        lower.includes('mac os x') || lower.includes('macintosh') ? 'macOS' :
-        lower.includes('linux') ? 'Linux' :
-        '';
-      return os ? `${browser} / ${os}` : browser;
+
+      const major = (pattern) => {
+        const m = raw.match(pattern);
+        return m ? String(m[1]).split(/[._]/)[0] : '';
+      };
+      const prettyVersion = (pattern) => {
+        const m = raw.match(pattern);
+        return m ? String(m[1]).replace(/_/g, '.').split('.').slice(0, 2).join('.') : '';
+      };
+
+      const isBot = /bot|spider|crawler|slurp|bingpreview|bytespider|headless/i.test(raw);
+      const isWechat = /MicroMessenger\/([\d.]+)/i.test(raw);
+      const isWebView = /; wv\)|Version\/[\d.]+ Chrome\/[\d.]+ Mobile Safari/i.test(raw);
+
+      let browser = '浏览器';
+      if (isWechat) browser = `WeChat ${major(/MicroMessenger\/([\d.]+)/i)}`;
+      else if (/Edg\/([\d.]+)/i.test(raw)) browser = `Edge ${major(/Edg\/([\d.]+)/i)}`;
+      else if (/Firefox\/([\d.]+)/i.test(raw)) browser = `Firefox ${major(/Firefox\/([\d.]+)/i)}`;
+      else if (/OPR\/([\d.]+)|Opera\/([\d.]+)/i.test(raw)) browser = `Opera ${major(/(?:OPR|Opera)\/([\d.]+)/i)}`;
+      else if (/CriOS\/([\d.]+)/i.test(raw)) browser = `Chrome ${major(/CriOS\/([\d.]+)/i)}`;
+      else if (/Chrome\/([\d.]+)/i.test(raw) && !/Chromium/i.test(raw)) browser = `Chrome ${major(/Chrome\/([\d.]+)/i)}`;
+      else if (/Version\/([\d.]+).*Safari/i.test(raw)) browser = `Safari ${major(/Version\/([\d.]+)/i)}`;
+      else if (/Safari\/([\d.]+)/i.test(raw) && !/Chrome/i.test(raw)) browser = 'Safari';
+      else if (/curl\/([\d.]+)/i.test(raw)) browser = `curl ${major(/curl\/([\d.]+)/i)}`;
+      else if (isBot) browser = 'Bot/Crawler';
+
+      let os = '';
+      if (/iPhone/i.test(raw)) {
+        const v = prettyVersion(/OS ([\d_]+)/i);
+        os = v ? `iPhone iOS ${v}` : 'iPhone';
+      } else if (/iPad/i.test(raw)) {
+        const v = prettyVersion(/OS ([\d_]+)/i);
+        os = v ? `iPad iPadOS ${v}` : 'iPad';
+      } else if (/Android ([\d.]+)/i.test(raw)) {
+        os = `Android ${prettyVersion(/Android ([\d.]+)/i)}`;
+      } else if (/Windows NT ([\d.]+)/i.test(raw)) {
+        const nt = prettyVersion(/Windows NT ([\d.]+)/i);
+        const winMap = { '10.0': 'Windows 10/11', '6.3': 'Windows 8.1', '6.2': 'Windows 8', '6.1': 'Windows 7' };
+        os = winMap[nt] || `Windows NT ${nt}`;
+      } else if (/Mac OS X ([\d_]+)/i.test(raw)) {
+        os = `macOS ${prettyVersion(/Mac OS X ([\d_]+)/i)}`;
+      } else if (/Linux/i.test(raw)) {
+        os = 'Linux';
+      }
+
+      const device =
+        isBot ? '🤖' :
+        /iPad|Tablet/i.test(raw) ? '📟' :
+        /Mobile|iPhone|Android/i.test(raw) ? '📱' :
+        '💻';
+      const hints = [];
+      if (isWechat) hints.push('微信内打开');
+      if (isWebView && !isWechat) hints.push('WebView');
+      if (/HeadlessChrome/i.test(raw)) hints.push('Headless');
+
+      return [device, browser, os, hints.join('·')].filter(Boolean).join(' / ');
     }
 
     function renderVisitRow(r) {
