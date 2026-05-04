@@ -405,6 +405,28 @@ function logOperation(action, details) {
   }
 }
 
+function getRequestMeta(req) {
+  const admin = getSessionAdmin(req);
+  const ipRaw = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  return {
+    admin: admin?.username,
+    role: admin?.role,
+    ip: ipRaw.replace('::ffff:', '').split(',')[0].trim(),
+    userAgent: req.headers['user-agent'] || ''
+  };
+}
+
+function summarizeNotice(notice) {
+  if (!notice) return {};
+  return {
+    noticeId: notice.id,
+    title: String(notice.title || '').slice(0, 80),
+    type: notice.type,
+    importance: notice.importance,
+    deadline: notice.deadline
+  };
+}
+
 // ============ Config & Password ============
 function loadConfig() {
   if (!fs.existsSync(CONFIG_FILE)) {
@@ -1722,9 +1744,11 @@ async function handleVerify(req, res) {
         'Content-Type': 'application/json',
         'Set-Cookie': `anb_visitor=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure ? '; Secure' : ''}`
       });
+      logOperation('VISITOR_VERIFY_SUCCESS', { ...getRequestMeta(req) });
       res.end(JSON.stringify({ success: true }));
       return;
     } else {
+      logOperation('VISITOR_VERIFY_FAILED', { ...getRequestMeta(req) });
       sendJSON(res, 401, { error: '验证码错误' });
     }
   } catch(e) {
@@ -2087,6 +2111,17 @@ function handlePOST(req, res) {
         }
 
         await modifyNotices(existing => [...existing, ...newNotices]);
+        const meta = getRequestMeta(req);
+        for (const att of attachments) {
+          logOperation('ATTACHMENT_UPLOAD', { ...meta, filename: att.name, savedName: att.savedName, size: att.size });
+        }
+        logOperation('NOTICE_CREATE', {
+          ...meta,
+          source: useLLM ? 'auto_ai_parse' : 'multipart',
+          count: newNotices.length,
+          notices: newNotices.map(summarizeNotice),
+          attachments: attachments.length
+        });
         sendJSON(res, 200, { success: true, count: newNotices.length, notices: newNotices });
       } catch(e) {
         console.error('Upload error:', e.message);
@@ -2103,6 +2138,12 @@ function handlePOST(req, res) {
         const useLLM = parserConfig.enabled && parserConfig.useOnSubmit;
         const newNotices = await dispatchParse(text, useLLM ? parserConfig : null);
         await modifyNotices(existing => [...existing, ...newNotices]);
+        logOperation('NOTICE_CREATE', {
+          ...getRequestMeta(req),
+          source: useLLM ? 'auto_ai_parse' : 'text',
+          count: newNotices.length,
+          notices: newNotices.map(summarizeNotice)
+        });
         sendJSON(res, 200, { success: true, count: newNotices.length, notices: newNotices });
       } catch(e) {
         console.error('POST error:', e.message);
@@ -2151,6 +2192,7 @@ function handleImageUpload(req, res) {
           }
 
           const result = await storage.uploadImage(part.content, part.filename || 'image.png');
+          logOperation('IMAGE_UPLOAD', { ...getRequestMeta(req), filename: part.filename || 'image.png', savedName: result.name, size: part.content.length, url: result.url });
           return sendJSON(res, 200, { url: result.url, name: result.name });
         }
       }
@@ -2177,6 +2219,13 @@ async function handleAddDirect(req, res) {
       notice.id = `n-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
       notice.expired = notice.deadline ? new Date(notice.deadline) < new Date() : false;
       await modifyNotices(existing => { existing.push(notice); return existing; });
+      logOperation('NOTICE_CREATE', {
+        ...getRequestMeta(req),
+        source: notice._source === 'llm' ? 'manual_ai_parse' : 'direct_preview',
+        count: 1,
+        notices: [summarizeNotice(notice)],
+        attachments: notice.attachments?.length || 0
+      });
       sendJSON(res, 200, { success: true, notice });
     } catch(e) {
       sendJSON(res, 500, { error: 'Add error: ' + e.message });
@@ -2195,6 +2244,7 @@ async function handleWebhook(req, res) {
         return sendJSON(res, 403, { error: 'Webhook未启用' });
       }
       if (secret !== cfg.webhookSecret) {
+        logOperation('WEBHOOK_AUTH_FAILED', { ...getRequestMeta(req), reason: 'invalid_secret' });
         return sendJSON(res, 401, { error: 'Invalid secret' });
       }
 
@@ -2207,6 +2257,11 @@ async function handleWebhook(req, res) {
         n.expired = n.deadline ? new Date(n.deadline) < now : false;
       }
       await modifyNotices(existing => { existing.push(...notices); return existing; });
+      logOperation('WEBHOOK_NOTICE_CREATE', {
+        ...getRequestMeta(req),
+        count: notices.length,
+        notices: notices.map(summarizeNotice)
+      });
       sendJSON(res, 200, { success: true, count: notices.length, notices });
     } catch(e) {
       sendJSON(res, 500, { error: 'Webhook error: ' + e.message });
@@ -2291,8 +2346,10 @@ async function handleParseLLM(req, res) {
       _diagnostics: getParseDiagnostics(n),
       _source: 'llm'
     }));
+    logOperation('AI_PARSE_MANUAL', { ...getRequestMeta(req), provider: parserConfig.provider, model: parserConfig.model, count: enriched.length, notices: enriched.map(summarizeNotice) });
     sendJSON(res, 200, { notices: enriched });
   } catch(e) {
+    logOperation('AI_PARSE_FAILED', { ...getRequestMeta(req), error: e.message });
     sendJSON(res, 500, { error: 'AI解析失败: ' + e.message });
   }
 }
@@ -2652,6 +2709,7 @@ async function handleBackupRestore(req, res) {
     }
 
     const result = restoreFromSnapshot(filename);
+    logOperation('BACKUP_RESTORE', { ...getRequestMeta(req), filename, noticeCount: result.noticeCount });
     sendJSON(res, 200, { success: true, ...result });
   } catch(e) {
     sendJSON(res, 500, { error: '恢复失败: ' + e.message });
@@ -2675,10 +2733,12 @@ function handleWebhookConfig(req, res) {
     if (action === 'generate') {
       config.webhookSecret = crypto.randomBytes(16).toString('hex');
       saveConfig(config);
+      logOperation('WEBHOOK_SECRET_GENERATE', { ...getRequestMeta(req) });
       sendJSON(res, 200, { success: true, webhookSecret: config.webhookSecret });
     } else if (action === 'disable') {
       delete config.webhookSecret;
       saveConfig(config);
+      logOperation('WEBHOOK_SECRET_DISABLE', { ...getRequestMeta(req) });
       sendJSON(res, 200, { success: true });
     } else {
       sendJSON(res, 400, { error: 'Invalid action' });
@@ -2964,12 +3024,15 @@ function handleCalendarFeed(req, res) {
 
 function handleDELETE(req, res, id) {
   let deleted = false;
+  let deletedNotice = null;
   modifyNotices(notices => {
+    deletedNotice = notices.find(n => n.id === id) || null;
     const filtered = notices.filter(n => n.id !== id);
     if (filtered.length < notices.length) deleted = true;
     return filtered;
   }).then(() => {
     if (!deleted) return sendJSON(res, 404, { error: 'Not found' });
+    logOperation('NOTICE_DELETE', { ...getRequestMeta(req), ...summarizeNotice(deletedNotice) });
     sendJSON(res, 200, { success: true });
   }).catch(e => sendJSON(res, 500, { error: 'Delete error' }));
 }
@@ -2981,10 +3044,12 @@ function handlePATCH(req, res, id) {
     try {
       const updates = JSON.parse(body);
       let updated = null;
+      let before = null;
       let notFound = false;
       modifyNotices(notices => {
         const idx = notices.findIndex(n => n.id === id);
         if (idx === -1) { notFound = true; return notices; }
+        before = { ...notices[idx] };
         if (updates.deadline !== undefined) {
           updates.expired = updates.deadline ? new Date(updates.deadline) < new Date() : false;
         }
@@ -2993,6 +3058,12 @@ function handlePATCH(req, res, id) {
         return notices;
       }).then(() => {
         if (notFound) return sendJSON(res, 404, { error: 'Not found' });
+        logOperation('NOTICE_UPDATE', {
+          ...getRequestMeta(req),
+          ...summarizeNotice(updated),
+          fields: Object.keys(updates),
+          oldTitle: before?.title && before.title !== updated.title ? String(before.title).slice(0, 80) : undefined
+        });
         sendJSON(res, 200, updated);
       }).catch(e => sendJSON(res, 500, { error: 'Update error' }));
     } catch(e) {
@@ -3189,8 +3260,10 @@ const server = http.createServer((req, res) => {
     if (!requireRoot(req, res)) return;
     try {
       const filename = createSnapshotBackup();
+      logOperation('BACKUP_CREATE', { ...getRequestMeta(req), filename, mode: 'manual' });
       sendJSON(res, 200, { success: true, filename });
     } catch(e) {
+      logOperation('BACKUP_FAILED', { ...getRequestMeta(req), mode: 'manual', error: e.message });
       sendJSON(res, 500, { error: '创建备份失败: ' + e.message });
     }
     return;

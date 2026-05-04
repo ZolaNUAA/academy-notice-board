@@ -2455,6 +2455,66 @@
       } catch(e) { console.log('加载管理员列表失败'); }
     };
 
+    function formatOperationLog(l) {
+      const actionMap = {
+        LOGIN: ['🔐 登录成功', '#2563eb', '#eff6ff'],
+        LOGIN_FAILED: ['🚫 登录失败', '#dc2626', '#fef2f2'],
+        LOGIN_BANNED: ['⛔ 登录限流', '#dc2626', '#fef2f2'],
+        VISITOR_VERIFY_SUCCESS: ['👁️ 访客验证成功', '#059669', '#ecfdf5'],
+        VISITOR_VERIFY_FAILED: ['🚫 访客验证失败', '#dc2626', '#fef2f2'],
+        NOTICE_CREATE: ['➕ 新增通知', '#059669', '#ecfdf5'],
+        NOTICE_UPDATE: ['✏️ 编辑通知', '#d97706', '#fffbeb'],
+        NOTICE_DELETE: ['🗑️ 删除通知', '#dc2626', '#fef2f2'],
+        ATTACHMENT_UPLOAD: ['📎 上传附件', '#7c3aed', '#f5f3ff'],
+        IMAGE_UPLOAD: ['🖼️ 上传图片', '#7c3aed', '#f5f3ff'],
+        AI_PARSE_MANUAL: ['🤖 AI解析', '#7c3aed', '#f5f3ff'],
+        AI_PARSE_FAILED: ['⚠️ AI解析失败', '#dc2626', '#fef2f2'],
+        WEBHOOK_NOTICE_CREATE: ['🔗 Webhook新增通知', '#0891b2', '#ecfeff'],
+        WEBHOOK_AUTH_FAILED: ['🚫 Webhook鉴权失败', '#dc2626', '#fef2f2'],
+        WEBHOOK_SECRET_GENERATE: ['🔑 生成Webhook密钥', '#0891b2', '#ecfeff'],
+        WEBHOOK_SECRET_DISABLE: ['🔒 禁用Webhook密钥', '#64748b', '#f8fafc'],
+        ADMIN_ADD: ['👤 添加管理员', '#2563eb', '#eff6ff'],
+        ADMIN_DELETE: ['👤 删除管理员', '#dc2626', '#fef2f2'],
+        PASSWORD_CHANGE: ['🔑 修改密码', '#d97706', '#fffbeb'],
+        PARSER_CONFIG: ['🤖 修改AI配置', '#7c3aed', '#f5f3ff'],
+        LIMITS_UPDATE: ['⚙️ 修改系统参数', '#d97706', '#fffbeb'],
+        BACKUP_CREATE: ['💾 创建备份', '#059669', '#ecfdf5'],
+        BACKUP_FAILED: ['⚠️ 备份失败', '#dc2626', '#fef2f2'],
+        BACKUP_RESTORE: ['📥 恢复备份', '#dc2626', '#fef2f2'],
+        RESTORE: ['📥 恢复备份', '#dc2626', '#fef2f2'],
+      };
+      const [label, color, bg] = actionMap[l.action] || [l.action || '操作', '#64748b', '#f8fafc'];
+      const operator = l.admin || l.username || '-';
+      const role = l.role ? ` · ${l.role}` : '';
+      const notice = l.title || l.notices?.[0]?.title || '';
+      const count = l.count || l.noticeCount || (Array.isArray(l.notices) ? l.notices.length : '');
+      const parts = [];
+      if (notice) parts.push(`《${escapeHtml(notice)}》`);
+      if (count && !notice) parts.push(`${count} 条`);
+      if (l.type) parts.push(escapeHtml(l.type));
+      if (l.deadline) parts.push('截止 ' + escapeHtml(l.deadline));
+      if (l.filename) parts.push(escapeHtml(l.filename));
+      if (l.fields?.length) parts.push('字段: ' + escapeHtml(l.fields.join(', ')));
+      if (l.provider || l.model) parts.push(escapeHtml([l.provider, l.model].filter(Boolean).join(' / ')));
+      if (l.error || l.reason) parts.push(escapeHtml(l.error || l.reason));
+      const detail = parts.join(' · ');
+      const ua = l.userAgent ? formatUserAgent(l.userAgent) : '';
+      return `
+        <div style="border-bottom:1px solid #eee;padding:8px 0">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span style="color:#3b82f6">${l.timestamp ? new Date(l.timestamp).toLocaleString('zh-CN') : '?'}</span>
+            <span style="background:${bg};color:${color};padding:2px 7px;border-radius:999px;font-weight:700">${label}</span>
+            <span style="color:#059669;font-weight:600">${escapeHtml(operator)}${escapeHtml(role)}</span>
+          </div>
+          ${detail ? `<div style="margin-top:4px;color:#334155">${detail}</div>` : ''}
+          <div style="margin-top:3px;color:#94a3b8;font-size:10px">
+            ${l.ip ? `IP: ${escapeHtml(l.ip)}` : ''}
+            ${ua ? ` · ${escapeHtml(ua)}` : ''}
+          </div>
+        </div>
+      `;
+    }
+
     window.loadAdminLogs = async function() {
       const list = document.getElementById('logList');
       if (!list) return;
@@ -2463,15 +2523,7 @@
         const res = await fetch('/api/logs');
         const data = await res.json();
         if (data.logs && data.logs.length > 0) {
-          list.innerHTML = data.logs.map(l => `
-            <div style="border-bottom:1px solid #eee;padding:4px 0">
-              <span style="color:#3b82f6">[${l.timestamp ? new Date(l.timestamp).toLocaleString('zh-CN') : '?'}]</span>
-              <span style="color:#1d4ed8;font-weight:600">${l.action}</span>
-              ${l.username ? ` <span style="color:#059669">${l.username}</span>` : ''}
-              ${l.ip ? ` <span style="color:#888">${l.ip}</span>` : ''}
-              ${l.userAgent ? `<div style="color:#aaa;font-size:10px;margin-left:80px">${l.userAgent}</div>` : ''}
-            </div>
-          `).join('');
+          list.innerHTML = data.logs.map(formatOperationLog).join('');
         } else {
           list.innerHTML = '<div style="color:#888;text-align:center;padding:20px">暂无日志</div>';
         }
