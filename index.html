@@ -2073,10 +2073,25 @@
     }
 
     // Backup & restore functions
+    function handleRootAuthError(res, data) {
+      if (res.status === 401 || res.status === 403) {
+        alert(data.error || (res.status === 401 ? '登录态已失效，请重新登录超级管理员账号' : '当前账号不是超级管理员'));
+        state.isAdmin = false;
+        state.adminUsername = '';
+        state.adminRole = '';
+        state.viewMode = 'sticky';
+        state.showLoginModal = true;
+        render();
+        return true;
+      }
+      return false;
+    }
+
     async function loadBackupVersions() {
       try {
-        const res = await fetch('/api/backup/versions');
+        const res = await fetch('/api/backup/versions', { credentials: 'same-origin' });
         const data = await res.json();
+        if (handleRootAuthError(res, data)) return;
         const list = data.versions || [];
         const el = document.getElementById('backupList');
         if (list.length === 0) {
@@ -2103,8 +2118,9 @@
 
     window.createBackupNow = async function() {
       try {
-        const res = await fetch('/api/backup/create');
+        const res = await fetch('/api/backup/create', { method: 'POST', credentials: 'same-origin' });
         const data = await res.json();
+        if (handleRootAuthError(res, data)) return;
         if (data.success) {
           alert('备份创建成功！');
           loadBackupVersions();
@@ -2122,10 +2138,12 @@
       try {
         const res = await fetch('/api/backup/restore', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename }),
         });
         const data = await res.json();
+        if (handleRootAuthError(res, data)) return;
         if (data.success) {
           alert('恢复成功！已恢复 ' + data.noticeCount + ' 条通知。');
           location.reload();

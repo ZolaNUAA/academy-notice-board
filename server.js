@@ -1569,8 +1569,11 @@ function requireAdmin(req, res) {
 }
 
 function requireRoot(req, res) {
-  const admin = requireAdmin(req, res);
-  if (!admin) return null;
+  const admin = getSessionAdmin(req);
+  if (!admin) {
+    sendJSON(res, 401, { error: '需要重新登录超级管理员账号（登录态已失效或服务可能已重启）' });
+    return null;
+  }
   if (admin.role !== 'root') {
     sendJSON(res, 403, { error: '需要超级管理员权限' });
     return null;
