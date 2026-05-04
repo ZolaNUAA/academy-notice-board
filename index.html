@@ -2354,87 +2354,155 @@
       }
     };
 
-    // Visit stats
-    window.loadVisitStats = async function() {
+    // Visit stats with pagination
+    const _visitStats = { offset: 0, hasMore: false, total: 0, loaded: [] };
+    window.loadVisitStats = async function(append = false) {
       const el = document.getElementById('visitStats');
-      if (!el) return;
-      el.innerHTML = '<div style="color:#888;text-align:center;padding:20px">加载中...</div>';
+      const listEl = document.getElementById('visitStatsList');
+      const moreEl = document.getElementById('visitStatsMore');
+      const totalEl = document.getElementById('visitStatsTotal');
+      if (!el || !listEl || !moreEl) return;
+
+      if (!append) {
+        _visitStats.offset = 0;
+        _visitStats.hasMore = false;
+        _visitStats.total = 0;
+        _visitStats.loaded = [];
+        el.innerHTML = '<div style="color:#888;text-align:center;padding:20px">加载中...</div>';
+        try {
+          const res = await fetch('/api/visit-stats');
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          const maxCount = Math.max(1, ...data.dailyVisits.map(d => d.count));
+          _visitStats.total = data.total || 0;
+          _visitStats.offset = data.recentAccess?.length || 0;
+          _visitStats.hasMore = data.hasMore || false;
+          _visitStats.loaded = data.recentAccess || [];
+          el.innerHTML = `
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+              <div style="flex:1;min-width:100px;background:#fff;padding:12px;border-radius:8px;text-align:center">
+                <div style="font-size:24px;font-weight:700;color:#1d4ed8">${data.totalVisits || 0}</div>
+                <div style="font-size:11px;color:#666">累计访问</div>
+              </div>
+              <div style="flex:1;min-width:100px;background:#fff;padding:12px;border-radius:8px;text-align:center">
+                <div style="font-size:24px;font-weight:700;color:#059669">${data.todayVisits || 0}</div>
+                <div style="font-size:11px;color:#666">今日访问</div>
+              </div>
+              <div style="flex:1;min-width:100px;background:#fff;padding:12px;border-radius:8px;text-align:center">
+                <div style="font-size:24px;font-weight:700;color:#7c3aed">${data.thisWeekVisits || 0}</div>
+                <div style="font-size:11px;color:#666">本周访问</div>
+              </div>
+            </div>
+            <div style="font-weight:600;margin-bottom:8px;color:#333">📊 近7天访问趋势</div>
+            <div style="display:flex;align-items:end;gap:4px;height:80px;padding:4px 0;margin-bottom:16px">
+              ${data.dailyVisits?.map(d => {
+                const h = Math.max(4, Math.round((d.count / maxCount) * 72));
+                return `<div style="flex:1;text-align:center" title="${d.date}: ${d.count}次">
+                  <div style="background:#3b82f6;height:${h}px;border-radius:3px 3px 0 0;margin:0 2px"></div>
+                  <div style="font-size:9px;color:#888;margin-top:2px">${d.date.slice(5)}</div>
+                  <div style="font-size:10px;color:#555">${d.count}</div>
+                </div>`;
+              }).join('')}
+            </div>
+            ${data.topCities?.length > 0 ? `
+            <div style="font-weight:600;margin-bottom:8px;color:#333">🏙️ 访问城市 Top5</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+              ${data.topCities.map((c, i) => {
+                const maxW = Math.max(...data.topCities.map(x => x.count));
+                const w = Math.round((c.count / maxW) * 100);
+                const colors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899'];
+                return `<div style="flex:1;min-width:80px;background:#fff;padding:8px;border-radius:8px;text-align:center">
+                  <div style="font-size:18px;font-weight:700;color:${colors[i]}">${c.count}</div>
+                  <div style="font-size:10px;color:#666;margin-top:2px">${c.city}</div>
+                  <div style="background:${colors[i]}20;height:4px;border-radius:2px;margin-top:4px">
+                    <div style="background:${colors[i]};height:4px;border-radius:2px;width:${w}%"></div>
+                  </div>
+                </div>`;
+              }).join('')}
+            </div>
+            ` : ''}
+            <div style="font-weight:600;margin-bottom:8px;color:#333">🕐 最近访问 <span id="visitStatsTotal" style="font-weight:400;font-size:11px;color:#888"></span></div>
+            <div style="font-size:11px">
+              <div id="visitStatsList"></div>
+              <div id="visitStatsMore" style="text-align:center;padding:8px 0"></div>
+            </div>
+          `;
+        } catch(e) {
+          el.innerHTML = '<div style="color:#dc2626;text-align:center;padding:20px">加载失败: ' + e.message + '</div>';
+          return;
+        }
+      }
+
+      const authMap = { root: ['👑root','#dc2626','#fef2f2'], admin: ['🔑admin','#2563eb','#dbeafe'], visitor: ['👁️visitor','#6b7280','#f3f4f6'] };
+      const gridCols = 'minmax(130px,auto) 54px minmax(100px,auto) minmax(54px,auto) 1fr';
+
+      // Build table header
+      if (!append) {
+        listEl.innerHTML = `<div style="display:grid;grid-template-columns:${gridCols};padding:4px 0;border-bottom:2px solid #e5e7eb;font-weight:600;color:#888">
+          <span>时间</span><span style="text-align:center">身份</span><span>IP</span><span>属地</span><span>客户端</span>
+        </div>`;
+        moreEl.innerHTML = '';
+      }
+
+      // Append rows
+      for (const r of _visitStats.loaded) {
+        const [authLabel, authColor, authBg] = authMap[r.auth] || authMap.visitor;
+        const uaShort = (r.ua || '').replace(/Mozilla\/[\d.]+ /,'').replace(/AppleWebKit\/[\d.]+ /,'').replace(/\(KHTML, like Gecko\)/,'');
+        const row = document.createElement('div');
+        row.style.cssText = 'display:grid;grid-template-columns:' + gridCols + ';align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6';
+        row.innerHTML = `
+          <span style="color:#3b82f6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${new Date(r.time).toLocaleString('zh-CN')}">${new Date(r.time).toLocaleString('zh-CN')}</span>
+          <span style="text-align:center"><span style="background:${authBg};color:${authColor};padding:1px 5px;border-radius:3px;font-weight:600;white-space:nowrap">${authLabel}</span></span>
+          <span style="color:#888;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.ip || '?'}">${r.ip || '?'}</span>
+          <span style="color:#059669;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.location || ''}">${r.location || ''}</span>
+          <span style="color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${uaShort}">${uaShort}</span>
+        `;
+        listEl.appendChild(row);
+      }
+
+      if (totalEl) totalEl.textContent = `(${_visitStats.total}条记录${_visitStats.hasMore ? '，已加载' + _visitStats.loaded.length + '条' : '，已全部加载'})`;
+      moreEl.innerHTML = _visitStats.hasMore
+        ? `<button type="button" onclick="loadVisitStatsMore()" style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:5px 16px;cursor:pointer;color:#333;font-size:11px">加载更多（还剩${_visitStats.remaining}条）▼</button>`
+        : `<span style="color:#aaa;font-size:11px">已加载全部 ${_visitStats.loaded.length} 条</span>`;
+    };
+
+    window.loadVisitStatsMore = async function() {
+      const moreEl = document.getElementById('visitStatsMore');
+      if (!moreEl) return;
+      moreEl.innerHTML = '<span style="color:#888;font-size:11px">加载中...</span>';
       try {
-        const res = await fetch('/api/visit-stats');
+        const res = await fetch('/api/visit-stats?offset=' + _visitStats.offset + '&limit=30');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        const maxCount = Math.max(1, ...data.dailyVisits.map(d => d.count));
-        el.innerHTML = `
-          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
-            <div style="flex:1;min-width:100px;background:#fff;padding:12px;border-radius:8px;text-align:center">
-              <div style="font-size:24px;font-weight:700;color:#1d4ed8">${data.totalVisits || 0}</div>
-              <div style="font-size:11px;color:#666">累计访问</div>
-            </div>
-            <div style="flex:1;min-width:100px;background:#fff;padding:12px;border-radius:8px;text-align:center">
-              <div style="font-size:24px;font-weight:700;color:#059669">${data.todayVisits || 0}</div>
-              <div style="font-size:11px;color:#666">今日访问</div>
-            </div>
-            <div style="flex:1;min-width:100px;background:#fff;padding:12px;border-radius:8px;text-align:center">
-              <div style="font-size:24px;font-weight:700;color:#7c3aed">${data.thisWeekVisits || 0}</div>
-              <div style="font-size:11px;color:#666">本周访问</div>
-            </div>
-          </div>
-          <div style="font-weight:600;margin-bottom:8px;color:#333">📊 近7天访问趋势</div>
-          <div style="display:flex;align-items:end;gap:4px;height:80px;padding:4px 0;margin-bottom:16px">
-            ${data.dailyVisits?.map(d => {
-              const h = Math.max(4, Math.round((d.count / maxCount) * 72));
-              return `<div style="flex:1;text-align:center" title="${d.date}: ${d.count}次">
-                <div style="background:#3b82f6;height:${h}px;border-radius:3px 3px 0 0;margin:0 2px"></div>
-                <div style="font-size:9px;color:#888;margin-top:2px">${d.date.slice(5)}</div>
-                <div style="font-size:10px;color:#555">${d.count}</div>
-              </div>`;
-            }).join('')}
-          </div>
-          ${data.topCities?.length > 0 ? `
-          <div style="font-weight:600;margin-bottom:8px;color:#333">🏙️ 访问城市 Top5</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-            ${data.topCities.map((c, i) => {
-              const maxW = Math.max(...data.topCities.map(x => x.count));
-              const w = Math.round((c.count / maxW) * 100);
-              const colors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899'];
-              return `<div style="flex:1;min-width:80px;background:#fff;padding:8px;border-radius:8px;text-align:center">
-                <div style="font-size:18px;font-weight:700;color:${colors[i]}">${c.count}</div>
-                <div style="font-size:10px;color:#666;margin-top:2px">${c.city}</div>
-                <div style="background:${colors[i]}20;height:4px;border-radius:2px;margin-top:4px">
-                  <div style="background:${colors[i]};height:4px;border-radius:2px;width:${w}%"></div>
-                </div>
-              </div>`;
-            }).join('')}
-          </div>
-          ` : ''}
-          <div style="font-weight:600;margin-bottom:8px;color:#333">🕐 最近访问</div>
-          <div style="font-size:11px">
-            <div style="display:grid;grid-template-columns:120px 54px 108px 68px 1fr;padding:4px 0;border-bottom:2px solid #e5e7eb;font-weight:600;color:#888;font-size:11px">
-              <span>时间</span>
-              <span style="text-align:center">身份</span>
-              <span>IP</span>
-              <span>属地</span>
-              <span>客户端</span>
-            </div>
-            <div style="max-height:200px;overflow-y:auto">
-            ${data.recentAccess?.length > 0 ? data.recentAccess.map(r => {
-              const authMap = { root: ['👑root','#dc2626','#fef2f2'], admin: ['🔑admin','#2563eb','#dbeafe'], visitor: ['👁️visitor','#6b7280','#f3f4f6'] };
-              const [authLabel, authColor, authBg] = authMap[r.auth] || authMap.visitor;
-              const uaShort = (r.ua || '').replace(/Mozilla\/[\d.]+ /,'').replace(/AppleWebKit\/[\d.]+ /,'').replace(/\(KHTML, like Gecko\)/,'');
-              return `
-              <div style="display:grid;grid-template-columns:120px 54px 108px 68px 1fr;align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6;font-size:11px">
-                <span style="color:#3b82f6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${new Date(r.time).toLocaleString('zh-CN')}">${new Date(r.time).toLocaleString('zh-CN')}</span>
-                <span style="text-align:center"><span style="background:${authBg};color:${authColor};padding:1px 5px;border-radius:3px;font-weight:600;white-space:nowrap">${authLabel}</span></span>
-                <span style="color:#888;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.ip || '?'}">${r.ip || '?'}</span>
-                <span style="color:#059669;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.location || ''}">${r.location || ''}</span>
-                <span style="color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${uaShort}">${uaShort}</span>
-              </div>
-            `}).join('') : '<div style="color:#888;text-align:center;padding:10px">暂无记录</div>'}
-            </div>
-          </div>
-        `;
+        _visitStats.offset = data.offset || _visitStats.offset;
+        _visitStats.hasMore = data.hasMore || false;
+        _visitStats.remaining = data.remaining || 0;
+        _visitStats.loaded.push(...(data.recentAccess || []));
+
+        const authMap = { root: ['👑root','#dc2626','#fef2f2'], admin: ['🔑admin','#2563eb','#dbeafe'], visitor: ['👁️visitor','#6b7280','#f3f4f6'] };
+        const gridCols = 'minmax(130px,auto) 54px minmax(100px,auto) minmax(54px,auto) 1fr';
+        const listEl = document.getElementById('visitStatsList');
+        for (const r of data.recentAccess || []) {
+          const [authLabel, authColor, authBg] = authMap[r.auth] || authMap.visitor;
+          const uaShort = (r.ua || '').replace(/Mozilla\/[\d.]+ /,'').replace(/AppleWebKit\/[\d.]+ /,'').replace(/\(KHTML, like Gecko\)/,'');
+          const row = document.createElement('div');
+          row.style.cssText = 'display:grid;grid-template-columns:' + gridCols + ';align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6';
+          row.innerHTML = `
+            <span style="color:#3b82f6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${new Date(r.time).toLocaleString('zh-CN')}">${new Date(r.time).toLocaleString('zh-CN')}</span>
+            <span style="text-align:center"><span style="background:${authBg};color:${authColor};padding:1px 5px;border-radius:3px;font-weight:600;white-space:nowrap">${authLabel}</span></span>
+            <span style="color:#888;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.ip || '?'}">${r.ip || '?'}</span>
+            <span style="color:#059669;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.location || ''}">${r.location || ''}</span>
+            <span style="color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${uaShort}">${uaShort}</span>
+          `;
+          listEl.appendChild(row);
+        }
+        const totalEl = document.getElementById('visitStatsTotal');
+        if (totalEl) totalEl.textContent = `(${_visitStats.total}条记录${_visitStats.hasMore ? '，已加载' + _visitStats.loaded.length + '条' : '，已全部加载'})`;
+        moreEl.innerHTML = _visitStats.hasMore
+          ? `<button type="button" onclick="loadVisitStatsMore()" style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:5px 16px;cursor:pointer;color:#333;font-size:11px">加载更多（还剩${_visitStats.remaining}条）▼</button>`
+          : `<span style="color:#aaa;font-size:11px">已加载全部 ${_visitStats.loaded.length} 条</span>`;
       } catch(e) {
-        el.innerHTML = '<div style="color:#dc2626;text-align:center;padding:20px">加载失败: ' + e.message + '</div>';
+        moreEl.innerHTML = '<span style="color:#dc2626;font-size:11px">加载失败: ' + e.message + '</span>';
       }
     };
 

@@ -2384,9 +2384,9 @@ function lookupIPLocation(ip) {
   });
 }
 
-async function enrichRecentAccess(recent) {
+async function enrichRecentAccess(recent, offset = 0, limit = 30) {
   // Run all IP lookups in parallel with a 2s individual timeout to avoid blocking
-  const items = recent.slice(0, 20).map(r => ({
+  const items = recent.slice(offset, offset + limit).map(r => ({
     time: r.time,
     ip: r.ip,
     ua: r.ua,
@@ -2405,8 +2405,14 @@ async function enrichRecentAccess(recent) {
 async function handleVisitStats(req, res) {
   if (!requireAdmin(req, res)) return;
   try {
+    const url = new URL(req.url, `http://localhost:${PORT}`);
+    const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0'));
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '30')));
+
     const daily = config.dailyVisits || {};
     const recent = config.recentAccess || [];
+    const total = recent.length;
+
     const days = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
@@ -2417,7 +2423,10 @@ async function handleVisitStats(req, res) {
     const todayKey = new Date().toISOString().substring(0, 10);
     const todayVisits = daily[todayKey] || 0;
     const thisWeekVisits = days.reduce((s, d) => s + d.count, 0);
-    const enriched = await enrichRecentAccess(recent);
+
+    const enriched = await enrichRecentAccess(recent, offset, limit);
+    const remaining = Math.max(0, total - offset - limit);
+    const hasMore = remaining > 0;
     // Aggregate top cities from recent access
     const cityCounts = {};
     for (const r of enriched) {
@@ -2435,7 +2444,11 @@ async function handleVisitStats(req, res) {
       thisWeekVisits,
       dailyVisits: days,
       recentAccess: enriched,
-      topCities
+      topCities,
+      total,
+      offset,
+      hasMore,
+      remaining
     });
   } catch(e) {
     console.error('[VisitStats] Error:', e.message);
