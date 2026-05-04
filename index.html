@@ -2355,18 +2355,16 @@
     };
 
     // Visit stats with pagination
-    const _visitStats = { offset: 0, hasMore: false, total: 0, loaded: [] };
+    const _visitStats = { offset: 0, hasMore: false, total: 0, remaining: 0, loaded: [] };
     window.loadVisitStats = async function(append = false) {
       const el = document.getElementById('visitStats');
-      const listEl = document.getElementById('visitStatsList');
-      const moreEl = document.getElementById('visitStatsMore');
-      const totalEl = document.getElementById('visitStatsTotal');
-      if (!el || !listEl || !moreEl) return;
+      if (!el) return;
 
       if (!append) {
         _visitStats.offset = 0;
         _visitStats.hasMore = false;
         _visitStats.total = 0;
+        _visitStats.remaining = 0;
         _visitStats.loaded = [];
         el.innerHTML = '<div style="color:#888;text-align:center;padding:20px">加载中...</div>';
         try {
@@ -2375,8 +2373,9 @@
           const data = await res.json();
           const maxCount = Math.max(1, ...data.dailyVisits.map(d => d.count));
           _visitStats.total = data.total || 0;
-          _visitStats.offset = data.recentAccess?.length || 0;
+          _visitStats.offset = data.offset + (data.recentAccess?.length || 0);
           _visitStats.hasMore = data.hasMore || false;
+          _visitStats.remaining = data.remaining || 0;
           _visitStats.loaded = data.recentAccess || [];
           el.innerHTML = `
             <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
@@ -2433,10 +2432,12 @@
         }
       }
 
+      const listEl = document.getElementById('visitStatsList');
+      const moreEl = document.getElementById('visitStatsMore');
+      const totalEl = document.getElementById('visitStatsTotal');
       const authMap = { root: ['👑root','#dc2626','#fef2f2'], admin: ['🔑admin','#2563eb','#dbeafe'], visitor: ['👁️visitor','#6b7280','#f3f4f6'] };
       const gridCols = 'minmax(130px,auto) 54px minmax(100px,auto) minmax(54px,auto) 1fr';
 
-      // Build table header
       if (!append) {
         listEl.innerHTML = `<div style="display:grid;grid-template-columns:${gridCols};padding:4px 0;border-bottom:2px solid #e5e7eb;font-weight:600;color:#888">
           <span>时间</span><span style="text-align:center">身份</span><span>IP</span><span>属地</span><span>客户端</span>
@@ -2444,7 +2445,6 @@
         moreEl.innerHTML = '';
       }
 
-      // Append rows
       for (const r of _visitStats.loaded) {
         const [authLabel, authColor, authBg] = authMap[r.auth] || authMap.visitor;
         const uaShort = (r.ua || '').replace(/Mozilla\/[\d.]+ /,'').replace(/AppleWebKit\/[\d.]+ /,'').replace(/\(KHTML, like Gecko\)/,'');
@@ -2461,9 +2461,11 @@
       }
 
       if (totalEl) totalEl.textContent = `(${_visitStats.total}条记录${_visitStats.hasMore ? '，已加载' + _visitStats.loaded.length + '条' : '，已全部加载'})`;
-      moreEl.innerHTML = _visitStats.hasMore
-        ? `<button type="button" onclick="loadVisitStatsMore()" style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:5px 16px;cursor:pointer;color:#333;font-size:11px">加载更多（还剩${_visitStats.remaining}条）▼</button>`
-        : `<span style="color:#aaa;font-size:11px">已加载全部 ${_visitStats.loaded.length} 条</span>`;
+      if (moreEl) {
+        moreEl.innerHTML = _visitStats.hasMore
+          ? `<button type="button" onclick="loadVisitStatsMore()" style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:5px 16px;cursor:pointer;color:#333;font-size:11px">加载更多（还剩${_visitStats.remaining}条）▼</button>`
+          : `<span style="color:#aaa;font-size:11px">已加载全部 ${_visitStats.loaded.length} 条</span>`;
+      }
     };
 
     window.loadVisitStatsMore = async function() {
