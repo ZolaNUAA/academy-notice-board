@@ -2520,17 +2520,21 @@ async function handleVisitStats(req, res) {
 function handleLogs(req, res) {
   try {
     if (!fs.existsSync(LOG_FILE)) {
-      return sendJSON(res, 200, { logs: [] });
+      return sendJSON(res, 200, { logs: [], total: 0, offset: 0, hasMore: false, remaining: 0 });
     }
+    const url = new URL(req.url, `http://localhost:${PORT}`);
+    const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0'));
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '30')));
     const content = fs.readFileSync(LOG_FILE, 'utf-8');
     const lines = content.trim().split('\n').filter(l => l).map(l => {
       try { return JSON.parse(l); } catch { return null; }
     }).filter(l => l);
-    // Return last 100 entries, newest first
-    const logs = lines.slice(-100).reverse();
-    sendJSON(res, 200, { logs });
+    const total = lines.length;
+    const logs = lines.slice().reverse().slice(offset, offset + limit);
+    const remaining = Math.max(0, total - offset - logs.length);
+    sendJSON(res, 200, { logs, total, offset, limit, hasMore: remaining > 0, remaining });
   } catch(e) {
-    sendJSON(res, 200, { logs: [], error: e.message });
+    sendJSON(res, 200, { logs: [], total: 0, offset: 0, hasMore: false, remaining: 0, error: e.message });
   }
 }
 
