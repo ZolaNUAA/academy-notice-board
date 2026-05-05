@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>石榴院通知看板</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -12,6 +12,24 @@
       background: radial-gradient(circle at 20% 20%, #f7f0e0 0, #f3ecdc 40%, #ebe2d2 100%);
       min-height: 100vh;
       color: #222;
+      padding-bottom: env(safe-area-inset-bottom);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    @media (hover: hover) {
+      .btn-primary:hover { background: #e0ebff; }
+      .btn-secondary:hover { background: #f5f5f5; }
+      .btn-danger:hover { background: #fee2e2; }
+      .category-chip:hover { background: #f5efe0; }
+      #backToTop:hover { opacity: 1; background: #374151; }
+      .sticky-note:hover { box-shadow: 6px 6px 20px rgba(0,0,0,0.18); transform: translateY(-2px); }
+      .note-links a:hover { text-decoration: underline; }
+      .attachment-link:hover { background: #a7f3d0; text-decoration: underline; }
+      .attachment-remove:hover { color: #e74c3c; }
+      .notice-list-item:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); transform: translateY(-1px); }
+      .file-upload-label:hover { background: #f1f5f9; border-color: #94a8b8; color: #475569; }
+      .file-item .fremove:hover { color: #ef4444; }
+      .preview-link:hover { background: #dbeafe; }
     }
 
     .container { max-width: 1300px; margin: 0 auto; padding: 20px; }
@@ -847,6 +865,19 @@
       color: #dbeafe;
       border-color: #6ea8ff;
     }
+    @media (hover: hover) {
+      body.dark-mode .category-chip:hover {
+        background: rgba(50, 58, 86, 0.95);
+        color: #f1f5f9;
+      }
+      body.dark-mode .sticky-note:hover { box-shadow: 0 14px 34px rgba(0,0,0,0.42); }
+      body.dark-mode .attachment-link:hover { background: rgba(5,150,105,0.25); }
+      body.dark-mode .notice-list-item:hover {
+        background: rgba(35, 40, 64, 0.98);
+        box-shadow: 0 12px 28px rgba(0,0,0,0.34);
+      }
+      body.dark-mode .tab:hover:not(.active) { background: rgba(96, 165, 250, 0.12); color: #dbe7ff; }
+    }
     /* Dark mode — 统一深色底+左侧彩色边 */
     body.dark-mode .sticky-note {
       background: #1d2034 !important;
@@ -1107,6 +1138,54 @@
     body.dark-mode .file-item .fsize { color: #6b7280; }
     body.dark-mode .note-attachments .attachment-link { background: #1e3a5f; color: #7ca3f5; }
     body.dark-mode .note-attachments .attachment-link:hover { background: #2a4a7f; }
+
+    /* ======================= Mobile / WeChat Optimizations ======================= */
+    @media (max-width: 768px) {
+      body { padding-bottom: env(safe-area-inset-bottom); }
+
+      /* Header compact */
+      .header { padding: 16px; }
+      .header h1 { font-size: 20px; }
+
+      /* Tabs horizontal scroll */
+      .tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        -webkit-overflow-scrolling: touch;
+      }
+      .tabs::-webkit-scrollbar { display: none; }
+      .tab { white-space: nowrap; flex: 0 0 auto; padding: 10px 14px; font-size: 13px; }
+
+      /* Category filters horizontal scroll */
+      .category-filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 8px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .category-filters::-webkit-scrollbar { display: none; }
+      .category-chip { white-space: nowrap; flex-shrink: 0; }
+
+      /* Controls vertical stack */
+      .controls { flex-direction: column; align-items: stretch; }
+      .search-input { width: 100%; min-width: unset; }
+
+      /* Input font 16px to prevent iOS zoom */
+      input, select, textarea { font-size: 16px !important; }
+
+      /* Modal bottom-sheet style on mobile */
+      .modal-overlay { padding: 12px; align-items: flex-end; }
+      .modal { padding: 20px 16px; max-height: 85vh; border-radius: 16px; }
+
+      /* Board single column at 480px */
+      .board { grid-template-columns: 1fr; }
+      @media (max-width: 480px) { .board { grid-template-columns: 1fr; } }
+
+      /* Back to top button above safe area */
+      #backToTop { bottom: calc(24px + env(safe-area-inset-bottom)); }
+    }
   </style>
 </head>
 <body>
