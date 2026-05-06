@@ -26,7 +26,6 @@ try {
 const DATA_DIR = USE_MNT ? path.join(BASE_DIR, 'data') : path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'notices.json');
 const CONFIG_FILE = USE_MNT ? path.join(BASE_DIR, 'config.json') : path.join(__dirname, 'config.json');
-const ACCESS_FILE = path.join(DATA_DIR, 'access.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const LOG_FILE = path.join(DATA_DIR, 'operation.log');
@@ -497,20 +496,37 @@ function saveConfig(config) {
   // GitHub backup disabled - data stored in Tencent Cloud COS
 }
 
-// ============ Access Stats (separate from config) ============
-function loadAccess() {
+// ============ Access Stats (derived from operation.log) ============
+function rebuildAccessFromLog() {
+  const access = { visits: 0, lastVisit: null, dailyVisits: {}, recentAccess: [] };
   try {
-    if (fs.existsSync(ACCESS_FILE)) {
-      return JSON.parse(fs.readFileSync(ACCESS_FILE, 'utf-8'));
+    if (!fs.existsSync(LOG_FILE)) return access;
+    const content = fs.readFileSync(LOG_FILE, 'utf-8');
+    const lines = content.trim().split('\n').filter(l => l);
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.action !== 'VISIT') continue;
+        const day = entry.timestamp.substring(0, 10);
+        access.dailyVisits[day] = (access.dailyVisits[day] || 0) + 1;
+        access.visits++;
+        access.lastVisit = entry.timestamp;
+        // Keep last 60 as recentAccess (prepend, trim later)
+        access.recentAccess.push({
+          time: entry.timestamp,
+          ip: entry.ip || '',
+          ua: (entry.ua || '').substring(0, 120),
+          auth: entry.auth || 'visitor'
+        });
+      } catch {} // skip corrupt lines
     }
-  } catch(e) { console.warn('[Access] Failed to load, starting fresh:', e.message); }
-  return { visits: 0, lastVisit: null, dailyVisits: {}, recentAccess: [] };
-}
-
-function saveAccess(access) {
-  try {
-    fs.writeFileSync(ACCESS_FILE, JSON.stringify(access, null, 2), 'utf-8');
-  } catch(e) { console.error('[Access] Failed to save:', e.message); }
+    // Keep only last 60 recentAccess entries
+    if (access.recentAccess.length > 60) {
+      access.recentAccess = access.recentAccess.slice(-60);
+    }
+    access.recentAccess.reverse(); // newest first
+  } catch(e) { console.warn('[Access] Failed to rebuild from log:', e.message); }
+  return access;
 }
 
 function hashPassword(password) {
@@ -551,13 +567,17 @@ function checkAdminPassword(password) {
 // Load config on startup
 const config = loadConfig();
 
-// Load access stats — separate file to prevent rsync overwrite
-let access = loadAccess();
-// Migrate access data from old config.json if present
-if (config.visits && !access.visits) { access.visits = config.visits; saveAccess(access); }
-if (config.lastVisit && !access.lastVisit) { access.lastVisit = config.lastVisit; saveAccess(access); }
-if (config.dailyVisits && Object.keys(access.dailyVisits || {}).length === 0) { access.dailyVisits = config.dailyVisits; saveAccess(access); }
-if (config.recentAccess && (access.recentAccess || []).length === 0) { access.recentAccess = config.recentAccess; saveAccess(access); }
+// Load access stats — rebuilt from operation.log (source of truth)
+let access = rebuildAccessFromLog();
+// Migrate access data from old config.json if log has no VISIT entries yet
+if (access.visits === 0 && (config.visits || config.dailyVisits)) {
+  // One-time migration: if old config has access data, seed it
+  access.visits = config.visits || 0;
+  access.lastVisit = config.lastVisit || null;
+  access.dailyVisits = config.dailyVisits || {};
+  access.recentAccess = (config.recentAccess || []).slice(0, 60);
+  console.log('[Access] Migrated', access.visits, 'visits from old config.json');
+}
 // Clean up migrated fields from config
 if (config.visits !== undefined || config.lastVisit !== undefined || config.dailyVisits !== undefined || config.recentAccess !== undefined) {
   delete config.visits; delete config.lastVisit; delete config.dailyVisits; delete config.recentAccess;
@@ -2877,20 +2897,20 @@ function fetchLatestCommit() {
 setTimeout(fetchLatestCommit, 100);
 
 function handleStats(req, res) {
-  // Always increment visit counters (stored in data/access.json, protected from rsync)
+  // Always increment visit counters and log to operation.log
+  const now = new Date().toISOString();
   access.visits = (access.visits || 0) + 1;
-  access.lastVisit = new Date().toISOString();
-  const todayKey = new Date().toISOString().substring(0, 10);
+  access.lastVisit = now;
+  const todayKey = now.substring(0, 10);
   if (!access.dailyVisits) access.dailyVisits = {};
   access.dailyVisits[todayKey] = (access.dailyVisits[todayKey] || 0) + 1;
 
-  // Only record in recentAccess if authenticated (admin session or visitor token)
+  // Determine auth level
   let auth = null;
   const admin = getSessionAdmin(req);
   if (admin) {
     auth = admin.role === 'root' ? 'root' : 'admin';
   } else {
-    // Check visitor token
     const cookies = parseCookies(req);
     const visitorToken = cookies['anb_visitor'];
     if (visitorToken && visitorTokens.has(visitorToken)) {
@@ -2902,17 +2922,18 @@ function handleStats(req, res) {
     }
   }
 
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  const ua = (req.headers['user-agent'] || '').substring(0, 120);
+
+  // Log to operation.log (source of truth for all access stats)
+  logOperation('VISIT', { ip, ua, auth });
+
+  // Update in-memory cache
   if (auth) {
     if (!access.recentAccess) access.recentAccess = [];
-    access.recentAccess.unshift({
-      time: new Date().toISOString(),
-      ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
-      ua: (req.headers['user-agent'] || '').substring(0, 120),
-      auth
-    });
+    access.recentAccess.unshift({ time: now, ip, ua, auth });
     if (access.recentAccess.length > 60) access.recentAccess.length = 60;
   }
-  saveAccess(access);
 
   const notices = readNotices();
   const today = new Date();
