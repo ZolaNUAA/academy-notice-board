@@ -506,17 +506,17 @@ function rebuildAccessFromLog() {
     for (const line of lines) {
       try {
         const entry = JSON.parse(line);
-        if (entry.action !== 'VISIT') continue;
+        // 只统计登录成功事件
+        if (entry.action !== 'LOGIN') continue;
         const day = entry.timestamp.substring(0, 10);
         access.dailyVisits[day] = (access.dailyVisits[day] || 0) + 1;
         access.visits++;
         access.lastVisit = entry.timestamp;
-        // Keep last 60 as recentAccess (prepend, trim later)
         access.recentAccess.push({
           time: entry.timestamp,
           ip: entry.ip || '',
-          ua: (entry.ua || '').substring(0, 120),
-          auth: entry.auth || 'visitor'
+          ua: (entry.userAgent || '').substring(0, 120),
+          auth: entry.role || 'admin'
         });
       } catch {} // skip corrupt lines
     }
@@ -2897,7 +2897,7 @@ function fetchLatestCommit() {
 setTimeout(fetchLatestCommit, 100);
 
 function handleStats(req, res) {
-  // Always increment visit counters and log to operation.log
+  // Always increment in-memory visit counters (persistent stats rebuilt from LOGIN log)
   const now = new Date().toISOString();
   access.visits = (access.visits || 0) + 1;
   access.lastVisit = now;
@@ -2925,10 +2925,7 @@ function handleStats(req, res) {
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
   const ua = (req.headers['user-agent'] || '').substring(0, 120);
 
-  // Log to operation.log (source of truth for all access stats)
-  logOperation('VISIT', { ip, ua, auth });
-
-  // Update in-memory cache
+  // Update in-memory cache (persistent stats rebuilt from LOGIN entries in operation.log)
   if (auth) {
     if (!access.recentAccess) access.recentAccess = [];
     access.recentAccess.unshift({ time: now, ip, ua, auth });
