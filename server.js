@@ -755,6 +755,7 @@ function inferCategory(text) {
     { pattern: /教学/, name: '教学' },
     { pattern: /研究生/, name: '研究生' },
     { pattern: /学工/, name: '学工' },
+    { pattern: /党务/, name: '党务' },
     { pattern: /人事/, name: '人事' },
     { pattern: /保密/, name: '保密' },
     { pattern: /国资/, name: '国资' },
@@ -1123,6 +1124,26 @@ function parseOwner(text) {
     if (name.length >= 2 && name.length <= 20 && !OWNER_BLACKLIST.has(name)) return name;
   }
 
+  // "联系人：张三（电话：123456）" — extract name + phone from parens
+  const contactWithParenPhone = text.match(/(?:负责人|联系人|对接人|经办人)\s*[:：]\s*([\u4e00-\u9fa5]{2,4})\s*[（(](?:电话|手机)?[:：]?\s*(\d{3,4}[-－]?\d{7,8}|\d{7,8}|\d{11})[)）]/);
+  if (contactWithParenPhone) {
+    const name = contactWithParenPhone[1];
+    const num = contactWithParenPhone[2].replace(/[-－\s]/g, '');
+    if (!OWNER_BLACKLIST.has(name)) return `${name} 电话 ${num}`;
+  }
+
+  // "联系XXX老师" / "咨询XXX老师" / "请与XXX联系"
+  const contactTeacher = text.match(/(?:联系|咨询|致电|请与)\s*([\u4e00-\u9fa5]{2,4})\s*(?:老师|教授|同志)/);
+  if (contactTeacher && !OWNER_BLACKLIST.has(contactTeacher[1])) {
+    return contactTeacher[1];
+  }
+
+  // "联系人：张三" on single line (with colon or without)
+  const contactLine = text.match(/联系人\s*[:：]?\s*([\u4e00-\u9fa5]{2,3})\s*$/m);
+  if (contactLine && !OWNER_BLACKLIST.has(contactLine[1])) {
+    return contactLine[1];
+  }
+
   // 检查负责人/联系人 独立行（无冒号分隔）
   const standaloneMatch = text.match(/(?:负责人|联系人)\s+(\S{2,10})/);
   if (standaloneMatch && !OWNER_BLACKLIST.has(standaloneMatch[1].trim())) {
@@ -1243,11 +1264,12 @@ function extractLocation(text) {
 
 function extractKeyPoints(body) {
   const points = [];
-  // 过滤纯问候行(长度<15才当问候)、无意义行
-  const GREETING_ONLY = /^(各位老师好|老师好|大家好|各位老师)[！!，,。；;]*$/;
+  const MAX_LEN = 50;  // Match LLM requirement: each keyPoint ≤50 chars
+  const GREETING_ONLY = /^(各位老师好|老师好|大家好|各位老师|老师们好|各位同仁)[！!，,。；;]*$/;
+  const SKIP_PATTERN = /^(https?:\/\/|\[\w+[：:]|【[^】]+】$)/;
   let lines = body.split('\n')
     .map(l => l.trim())
-    .filter(l => l.length > 4 && l.length < 200 && !GREETING_ONLY.test(l) && !/^\[/.test(l));
+    .filter(l => l.length > 4 && l.length < 200 && !GREETING_ONLY.test(l) && !SKIP_PATTERN.test(l));
 
   // 如果行数太少(<=2行)但有长行，尝试按。；；分句
   if (lines.length <= 2 && lines.some(l => l.length > 60)) {
@@ -1275,73 +1297,80 @@ function extractKeyPoints(body) {
     if (splitLines.length > lines.length) lines = splitLines;
   }
 
-  const importantKws = ['截止', '请于', '务必', '必须', '申请', '提交', '完成', '报名', '审核', '确认', '参会', '地点', '时间'];
+  // Score each line: date/action words get higher priority
   const dateRegex = /(\d+月\d+日|\d{1,2}[.\/-]\d{1,2})/;
+  const actionKws = ['截止', '请于', '务必', '必须', '严禁', '申请', '提交', '完成', '报名', '审核', '确认', '参会', '报送', '上报', '不得', '限项', '配套经费'];
+  const infoKws = ['地点', '时间', '联系人', '电话', '方式', '要求', '备注', '注意', '附件', '说明', '内容', '材料'];
+  const scored = lines.slice(0, 15).map(line => {
+    let cleaned = line.replace(/^[\s\d、.。:：•\-–—>【】\[\]★※▲△▼▽◆◇▪▫●○]+/, '').trim();
+    if (cleaned.length < 5 || cleaned.length > 180) return null;
+    if (cleaned.length < 15 && GREETING_ONLY.test(cleaned)) return null;
+    let score = 0;
+    for (const kw of actionKws) { if (cleaned.includes(kw)) score += 3; }
+    for (const kw of infoKws) { if (cleaned.includes(kw)) score += 1; }
+    if (dateRegex.test(cleaned)) score += 3;
+    if (/^(?:请|需|应|如|可|欢迎|各位|请各)/.test(cleaned)) score += 1;
+    if (cleaned.length < 10 && score === 0) return null;
+    return { text: cleaned, score };
+  }).filter(Boolean);
 
-  for (const line of lines.slice(0, 10)) {
-    const cleaned = line.replace(/^[\s\d、.。:：•\-–—>【】\[\]]+/, '').replace(/[抱拳玫瑰庆祝花朵]+/g, '').trim();
-    if (cleaned.length < 5 || cleaned.length > 180) continue;
-    // 只过滤纯问候的短行
-    if (cleaned.length < 15 && GREETING_ONLY.test(cleaned)) continue;
+  // Sort by score descending, take top 5
+  scored.sort((a, b) => b.score - a.score);
 
-    let isKey = false;
-    for (const kw of importantKws) {
-      if (cleaned.includes(kw)) { isKey = true; break; }
+  for (const item of scored) {
+    let text = item.text;
+    // Truncate to MAX_LEN, trying to break at sentence boundary
+    if (text.length > MAX_LEN) {
+      const truncated = text.substring(0, MAX_LEN);
+      const lastPeriod = Math.max(truncated.lastIndexOf('。'), truncated.lastIndexOf('；'), truncated.lastIndexOf('，'));
+      text = (lastPeriod > MAX_LEN * 0.6 ? truncated.substring(0, lastPeriod) : truncated) + '…';
     }
-    if (!isKey && dateRegex.test(cleaned)) isKey = true;
-    if (!isKey && /^(?:请|需|应|如|可|欢迎)/.test(cleaned)) isKey = true;
-
-    if (isKey || points.length < 3) {
-      if (!cleaned.startsWith('http') && !points.includes(cleaned)) {
-        points.push(cleaned);
-      }
+    // Deduplicate similar content (share common prefix ≥8 chars)
+    if (!points.some(p => p.substring(0, 8) === text.substring(0, 8))) {
+      points.push(text);
     }
     if (points.length >= 5) break;
   }
+
   return points;
 }
 
 // Smart title extraction
 function extractTitle(block) {
+  // Category prefix stripping (e.g. "4.30-科研-", "05-06-教学-")
+  const CATEGORY_PREFIX = /^(\d{1,2}[.\/-]\d{1,2}\s*[-—–]\s*)?(科研|教学|研究生|学工|党务|人事|保密|国资|安全|国合|全院|其他)\s*[-—–]\s*/;
+
   // Try header format: 【标题】 or 【字段名】value
-  // Support both 【标题】 and 【字段名】value (without closing bracket)
   const headerMatchWithBracket = block.match(/^【([^】]+)】/);
   const headerMatchWithoutBracket = block.match(/^【([^】\n]+)/);
 
   let workingBlock = block;
-  let isFieldHeader = false;
 
   if (headerMatchWithBracket) {
     const title = headerMatchWithBracket[1].trim();
-    if (title.length >= 2 && title.length <= 50) {
-      if (!/^(时间|地点|负责人|联系人|电话|主办|组织|发布|截止|报名)/.test(title)) {
-        return title;
+    if (title.length >= 2 && title.length <= 80) {
+      if (!/^(时间|地点|负责人|联系人|电话|主办|组织|发布|截止|报名|参会|签到|备注)/.test(title)) {
+        // Strip date+category prefix from title itself
+        return title.replace(CATEGORY_PREFIX, '').trim().slice(0, 50);
       }
       // Field header detected - strip it from workingBlock
-      isFieldHeader = true;
       workingBlock = block.replace(/^【[^】]+】/, '').trim();
-      // Strip leading ： or : if present
       if (workingBlock.startsWith('：') || workingBlock.startsWith(':')) {
         workingBlock = workingBlock.slice(1).trim();
       }
     }
   } else if (headerMatchWithoutBracket) {
     const title = headerMatchWithoutBracket[1].trim();
-    // Check if it's a field header - either starts with field name OR is very long (unclosed bracket case)
-    const isLikelyFieldHeader = /^(时间|地点|负责人|联系人|电话|主办|组织|发布|截止|报名)/.test(title);
-    const isTooLongForTitle = title.length > 30; // If > 30 chars, likely not a real title
+    const isLikelyFieldHeader = /^(时间|地点|负责人|联系人|电话|主办|组织|发布|截止|报名|参会|签到|备注)/.test(title);
+    const isTooLongForTitle = title.length > 30;
 
-    if (title.length >= 2 && (isLikelyFieldHeader || isTooLongForTitle)) {
-      // Field header detected - strip it from workingBlock
-      // Use a more precise pattern to handle 【时间】：... format
-      isFieldHeader = true;
-      workingBlock = block.replace(/^【[^】\n]*】?/, '').trim();
-      // Also try to strip trailing ： or : if present
-      if (workingBlock.startsWith('：') || workingBlock.startsWith(':')) {
-        workingBlock = workingBlock.slice(1).trim();
-      }
-    } else if (title.length >= 2 && title.length <= 50) {
-      return title;
+    if (title.length >= 2 && !isLikelyFieldHeader && !isTooLongForTitle && title.length <= 50) {
+      return title.replace(CATEGORY_PREFIX, '').trim().slice(0, 50);
+    }
+    // Field header or too long - strip it from workingBlock
+    workingBlock = block.replace(/^【[^】\n]*】?/, '').trim();
+    if (workingBlock.startsWith('：') || workingBlock.startsWith(':')) {
+      workingBlock = workingBlock.slice(1).trim();
     }
   }
 
@@ -1349,25 +1378,27 @@ function extractTitle(block) {
   const lines = workingBlock.split('\n').filter(l => l.trim().length > 0);
   for (const line of lines) {
     const cleaned = line.trim();
-    // Skip if looks like a date (with optional spaces)
+    // Skip date lines
     if (/^\d{4}[\s\/-]*年/.test(cleaned)) continue;
     if (/^\d{3}[-]?\d{4,}/.test(cleaned)) continue;
+    // Skip email
     if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(cleaned)) continue;
-    // Skip if starts with field header punctuation
-    if (/^[：:、，,【】《》""''""''【】]/.test(cleaned)) continue;
+    // Skip URLs
+    if (/^https?:\/\//.test(cleaned)) continue;
+    // Skip punctuation starts
+    if (/^[：:、，,【】《》""'']/.test(cleaned)) continue;
     if (cleaned.length < 2) continue;
 
-    // Return first 50 chars
-    return cleaned.slice(0, 50);
+    // Strip date+category prefix from line if present, then return first 50 chars
+    return cleaned.replace(CATEGORY_PREFIX, '').trim().slice(0, 50);
   }
 
-  // If all lines were skipped (e.g., content was only a date/time), try to extract content after the date
-  // Pattern: YYYY年MM月DD日 or YYYY-MM-DD with optional spaces
+  // Last resort: extract from after date prefix in workingBlock
   const dateMatch = workingBlock.match(/^(\d{4}[\s\/-]*年[\s\/-]*\d{1,2}[\s\/-]*月[\s\/-]*\d{1,2}[\s\/-]*[日号]?)/);
   if (dateMatch) {
     const afterDate = workingBlock.slice(dateMatch[0].length).trim();
     if (afterDate.length >= 2) {
-      return afterDate.slice(0, 50);
+      return afterDate.replace(CATEGORY_PREFIX, '').trim().slice(0, 50);
     }
   }
 
