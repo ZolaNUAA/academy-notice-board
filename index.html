@@ -169,6 +169,9 @@
       box-shadow: 4px 4px 14px rgba(0,0,0,0.12);
       position: relative;
       transition: transform 0.2s, box-shadow 0.2s;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .sticky-note:hover { box-shadow: 6px 6px 20px rgba(0,0,0,0.18); transform: translateY(-2px); }
     .sticky-note.expired { opacity: 0.6; }
