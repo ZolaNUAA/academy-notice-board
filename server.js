@@ -26,6 +26,7 @@ try {
 const DATA_DIR = USE_MNT ? path.join(BASE_DIR, 'data') : path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'notices.json');
 const CONFIG_FILE = USE_MNT ? path.join(BASE_DIR, 'config.json') : path.join(__dirname, 'config.json');
+const ACCESS_FILE = path.join(DATA_DIR, 'access.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const LOG_FILE = path.join(DATA_DIR, 'operation.log');
@@ -436,8 +437,6 @@ function loadConfig() {
         'ChangeMe@2024': { role: 'root', hash: hashPassword('ChangeMe@2024') }
       },
       version: 1,
-      visits: 0,
-      lastVisit: null,
       limits: {
         maxBodySize: 2 * 1024 * 1024,
         maxFileSize: 5 * 1024 * 1024,
@@ -469,8 +468,6 @@ function loadConfig() {
     delete cfg.password;
     saveConfig(cfg);
   }
-  if (typeof cfg.visits !== 'number') cfg.visits = 0;
-  if (!cfg.lastVisit) cfg.lastVisit = null;
   // Ensure limits exist with defaults
   if (!cfg.limits) cfg.limits = {
     maxBodySize: 2 * 1024 * 1024,
@@ -498,6 +495,22 @@ function loadConfig() {
 function saveConfig(config) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
   // GitHub backup disabled - data stored in Tencent Cloud COS
+}
+
+// ============ Access Stats (separate from config) ============
+function loadAccess() {
+  try {
+    if (fs.existsSync(ACCESS_FILE)) {
+      return JSON.parse(fs.readFileSync(ACCESS_FILE, 'utf-8'));
+    }
+  } catch(e) { console.warn('[Access] Failed to load, starting fresh:', e.message); }
+  return { visits: 0, lastVisit: null, dailyVisits: {}, recentAccess: [] };
+}
+
+function saveAccess(access) {
+  try {
+    fs.writeFileSync(ACCESS_FILE, JSON.stringify(access, null, 2), 'utf-8');
+  } catch(e) { console.error('[Access] Failed to save:', e.message); }
 }
 
 function hashPassword(password) {
@@ -537,6 +550,19 @@ function checkAdminPassword(password) {
 
 // Load config on startup
 const config = loadConfig();
+
+// Load access stats — separate file to prevent rsync overwrite
+let access = loadAccess();
+// Migrate access data from old config.json if present
+if (config.visits && !access.visits) { access.visits = config.visits; saveAccess(access); }
+if (config.lastVisit && !access.lastVisit) { access.lastVisit = config.lastVisit; saveAccess(access); }
+if (config.dailyVisits && Object.keys(access.dailyVisits || {}).length === 0) { access.dailyVisits = config.dailyVisits; saveAccess(access); }
+if (config.recentAccess && (access.recentAccess || []).length === 0) { access.recentAccess = config.recentAccess; saveAccess(access); }
+// Clean up migrated fields from config
+if (config.visits !== undefined || config.lastVisit !== undefined || config.dailyVisits !== undefined || config.recentAccess !== undefined) {
+  delete config.visits; delete config.lastVisit; delete config.dailyVisits; delete config.recentAccess;
+  saveConfig(config);
+}
 
 // Ensure data directory and file exist
 if (!fs.existsSync(path.dirname(DATA_FILE))) {
@@ -2504,8 +2530,8 @@ async function handleVisitStats(req, res) {
     const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0'));
     const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '30')));
 
-    const daily = config.dailyVisits || {};
-    const recent = config.recentAccess || [];
+    const daily = access.dailyVisits || {};
+    const recent = access.recentAccess || [];
     const total = recent.length;
 
     const days = [];
@@ -2534,7 +2560,7 @@ async function handleVisitStats(req, res) {
       .slice(0, 5)
       .map(([city, count]) => ({ city, count }));
     sendJSON(res, 200, {
-      totalVisits: config.visits,
+      totalVisits: access.visits || 0,
       todayVisits,
       thisWeekVisits,
       dailyVisits: days,
@@ -2547,7 +2573,7 @@ async function handleVisitStats(req, res) {
     });
   } catch(e) {
     console.error('[VisitStats] Error:', e.message);
-    sendJSON(res, 200, { totalVisits: config.visits, todayVisits: 0, thisWeekVisits: 0, dailyVisits: [], recentAccess: [] });
+    sendJSON(res, 200, { totalVisits: access.visits || 0, todayVisits: 0, thisWeekVisits: 0, dailyVisits: [], recentAccess: [] });
   }
 }
 
@@ -2851,12 +2877,12 @@ function fetchLatestCommit() {
 setTimeout(fetchLatestCommit, 100);
 
 function handleStats(req, res) {
-  // Always increment visit counters (aggregate stats)
-  config.visits++;
-  config.lastVisit = new Date().toISOString();
+  // Always increment visit counters (stored in data/access.json, protected from rsync)
+  access.visits = (access.visits || 0) + 1;
+  access.lastVisit = new Date().toISOString();
   const todayKey = new Date().toISOString().substring(0, 10);
-  if (!config.dailyVisits) config.dailyVisits = {};
-  config.dailyVisits[todayKey] = (config.dailyVisits[todayKey] || 0) + 1;
+  if (!access.dailyVisits) access.dailyVisits = {};
+  access.dailyVisits[todayKey] = (access.dailyVisits[todayKey] || 0) + 1;
 
   // Only record in recentAccess if authenticated (admin session or visitor token)
   let auth = null;
@@ -2877,16 +2903,16 @@ function handleStats(req, res) {
   }
 
   if (auth) {
-    if (!config.recentAccess) config.recentAccess = [];
-    config.recentAccess.unshift({
+    if (!access.recentAccess) access.recentAccess = [];
+    access.recentAccess.unshift({
       time: new Date().toISOString(),
       ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
       ua: (req.headers['user-agent'] || '').substring(0, 120),
       auth
     });
-    if (config.recentAccess.length > 60) config.recentAccess.length = 60;
+    if (access.recentAccess.length > 60) access.recentAccess.length = 60;
   }
-  saveConfig(config);
+  saveAccess(access);
 
   const notices = readNotices();
   const today = new Date();
@@ -2913,8 +2939,8 @@ function handleStats(req, res) {
   const activeNotices = notices.filter(n => !n.expired).length;
   const expiredNotices = notices.filter(n => n.expired).length;
   sendJSON(res, 200, {
-    totalVisits: config.visits,
-    lastVisit: config.lastVisit,
+    totalVisits: access.visits || 0,
+    lastVisit: access.lastVisit,
     todayNotices: todayCount,
     totalNotices: notices.length,
     activeNotices,
