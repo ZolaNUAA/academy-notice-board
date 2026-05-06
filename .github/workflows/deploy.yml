@@ -33,7 +33,7 @@ jobs:
           script: |
             cd /home/ubuntu/academy-notice-board
             git stash
-            git pull origin main
+            git -c http.sslbackend=gnutls pull origin main
             git stash pop || true
             npm install --production
             pm2 delete academy-notice-board 2>/dev/null
