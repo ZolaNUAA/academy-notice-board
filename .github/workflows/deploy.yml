@@ -32,7 +32,9 @@ jobs:
             GITHUB_SHA,GITHUB_RUN_NUMBER,GITHUB_REF_NAME
           script: |
             cd /home/ubuntu/academy-notice-board
+            git stash
             git pull origin main
+            git stash pop || true
             npm install --production
             pm2 delete academy-notice-board 2>/dev/null
             DEPLOY_VERSION="${GITHUB_SHA:0:7}" DEPLOY_DATE="$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')" pm2 start ecosystem.config.js --update-env
