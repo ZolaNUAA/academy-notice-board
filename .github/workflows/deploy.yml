@@ -33,11 +33,7 @@ jobs:
           rsync -avz --delete \
             --exclude='.git' \
             --exclude='node_modules' \
-            --exclude='data/uploads' \
-            --exclude='data/notices.json' \
-            --exclude='data/config.json' \
-            --exclude='data/operation.log' \
-            --exclude='data/backups' \
+            --exclude='data/' \
             --exclude='.deploy-exclude' \
             -e "ssh -p ${{ secrets.SERVER_PORT }}" \
             ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/home/ubuntu/academy-notice-board/
