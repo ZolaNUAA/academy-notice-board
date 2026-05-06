@@ -727,7 +727,7 @@ function mergeSubFields(parts) {
     // 子字段：括号内容完全匹配已知子字段名，或括号内容以子字段名开头后跟冒号
     const isSubField = bracketMatch && (
       SUB_FIELD_NAMES.has(bracketContent) ||
-      /^(?:时间|地点|路线|报名时间|报名方式|签到|主题|主讲人|主持人|联系人|联系方式|联系电话|邮箱|学分|备注|附件|要求|说明|补充|注意|议程|参会人员|参加人员|费用|主办|承办|协办|对象|适用|范围|经费|限项|公示期|申报材料|校内截止|校内联系|相关事项|重点提示|补充说明)[：:】]/.test(bracketContent)
+      /^(?:时间|地点|路线|报名时间|报名方式|签到|主题|主讲人|主持人|联系人|联系方式|联系电话|邮箱|学分|备注|附件|要求|说明|补充|注意|议程|参会人员|参加人员|费用|主办|承办|协办|对象|适用|范围|经费|限项|公示期|申报材料|校内截止|校内联系|相关事项|重点提示|补充说明)($|[：:】\s])/.test(bracketContent)
     );
     const isInlineLong = bracketMatch && INLINE_CONTENT.test(trimmed);
     const isListLike = bracketMatch && /^【[^】]*[、，,]/.test(trimmed) && bracketMatch[1].length > 8;
@@ -1405,7 +1405,11 @@ function parseNoticeBlock(block, idx) {
   const cat = inferCategory(`${title}\n${body}`);
   const imp = inferImportance(`${title}\n${body}`);
   const owner = parseOwner(body);
-  const links = extractLinks(body);
+  // Extract links from both block (before header strip) and body to avoid losing header URLs
+  const linksFromBlock = extractLinks(block);
+  const linksFromBody = extractLinks(body);
+  const allLinks = [...new Set([...linksFromBlock, ...linksFromBody])];
+  const links = allLinks.slice(0, 5);
   const keyPoints = extractKeyPoints(body);
   const location = extractLocation(body);
   const now = new Date();
