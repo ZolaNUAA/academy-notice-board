@@ -33,3 +33,9 @@ out/
 .idea/
 *.swp
 *.swo
+
+# Deploy scripts
+deploy.sh
+deploy/nginx.conf
+deploy/ecosystem.config.js
+.deploy-exclude

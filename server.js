@@ -36,7 +36,7 @@ try {
 } catch(e) { console.warn('[Backup] Failed to create backup dir:', e.message); }
 // When deployed on cloud, set BASE_URL to the public URL of the service
 // e.g., https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com
-const BASE_URL = process.env.BASE_URL || 'https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com';
+const BASE_URL = process.env.BASE_URL || 'http://124.221.152.130';
 
 // 访问验证码（可配置到环境变量）
 const VERIFY_CODE = process.env.VERIFY_CODE || 'nuaa16';

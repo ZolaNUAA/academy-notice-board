@@ -7,6 +7,8 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    html { overflow-y: scroll; }
+
     body {
       font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
       background: radial-gradient(circle at 20% 20%, #f7f0e0 0, #f3ecdc 40%, #ebe2d2 100%);
@@ -170,6 +172,17 @@
     }
     .sticky-note:hover { box-shadow: 6px 6px 20px rgba(0,0,0,0.18); transform: translateY(-2px); }
     .sticky-note.expired { opacity: 0.6; }
+
+    /* Notice highlight animation */
+    @keyframes notice-highlight-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(234,179,8,0.6); }
+      50% { box-shadow: 0 0 0 8px rgba(234,179,8,0.2); }
+      100% { box-shadow: 0 0 0 0 rgba(234,179,8,0); }
+    }
+    .sticky-note.notice-highlight {
+      animation: notice-highlight-pulse 0.6s ease-in-out 3;
+      border-color: #eab308;
+    }
 
     /* Pin */
     .pin {
@@ -1212,6 +1225,8 @@
       loading: true,
       addPreview: null,
       pendingAttachments: [], // 待上传的附件（仅文件名）
+      isSubmitting: false, // 防重复提交
+      highlightNoticeId: null, // 新增通知高亮ID
       stats: null,
       typeCounts: null,
       activeTypeCounts: null,
@@ -1317,9 +1332,10 @@
         page: state.currentPage,
         limit: state.pageLimit,
         type: state.selectedType,
-        expired: state.showExpired ? 'true' : 'false',
         sort: state.sortBy
       });
+      // Only send expired=false when hiding expired; when showing expired, don't filter (return all)
+      if (!state.showExpired) params.set('expired', 'false');
       if (state.search) params.set('search', state.search);
 
       try {
@@ -1764,7 +1780,7 @@
 
           <div class="category-filters">
             ${(() => {
-              const tc = state.showExpired ? (state.expiredTypeCounts || {}) : (state.activeTypeCounts || state.typeCounts || {});
+              const tc = state.showExpired ? (state.typeCounts || {}) : (state.activeTypeCounts || state.typeCounts || {});
               const total = Object.values(tc).reduce((a,b)=>a+b,0);
               return `
               <button type="button" class="category-chip ${state.selectedType==='all'?'active':''}" onclick="state.selectedType='all';fetchNotices()">
@@ -1852,7 +1868,7 @@
               <div id="previewContainer"></div>
               <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeAddModal()">取消</button>
-                <button type="button" class="btn btn-primary" onclick="handleAdd()">解析添加</button>
+                <button type="button" class="btn btn-primary" id="addSubmitBtn" onclick="handleAdd()">解析添加</button>
               </div>
             </div>
           </div>
@@ -3034,7 +3050,7 @@
       if (n.importance === 3 && urgency) chips += `<span class="info-chip chip-urgent">⚠️ 高优先级</span>`;
 
       return `
-        <div class="sticky-note ${catClass} ${n.expired?'expired':''}" data-notice-id="${n.id}">
+        <div class="sticky-note ${catClass} ${n.expired?'expired':''} ${state.highlightNoticeId === n.id ? 'notice-highlight' : ''}" id="notice-${n.id}" data-notice-id="${n.id}">
           ${urgency ? `<div class="urgency-strip ${urgency}"></div>` : ''}
           <div class="pin"></div>
           <div class="note-top">
@@ -3071,7 +3087,7 @@
             </div>
           ` : ''}
           <div class="note-footer">
-            ${n.owner && n.owner !== '未指定' ? `<span class="note-owner">👤 ${n.owner}</span>` : '<span></span>'}
+            ${n.owner && n.owner !== '未指定' ? `<span class="note-owner">👤 ${escapeHtml(n.owner)}</span>` : '<span></span>'}
             ${state.isAdmin ? `
               <div>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="handleEdit('${n.id}')">编辑</button>
@@ -3096,7 +3112,7 @@
               <span class="meta-item">${getTypeIcon(n.type)} ${n.type}</span>
               <span class="meta-item">📅 ${formatDate(n.publishDate)}</span>
               ${n.deadline ? `<span class="meta-item">⏰ <span class="${ddlClass}">${ddlText}</span><a href="/api/calendar/${n.id}" title="分享到手机日历" onclick="shareCalendar(event,'${escapeAttr(n.id)}')" class="cal-add-link"> 📅</a></span>` : ''}
-              <span class="meta-item">👤 ${n.owner}</span>
+              <span class="meta-item">👤 ${escapeHtml(n.owner)}</span>
               <span class="note-stars ${n.importance===3?'star-high':n.importance===2?'star-medium':'star-low'}" style="font-size:11px">${renderStars(n.importance)}</span>
               ${n.attachments && n.attachments.length > 0 ? `<span class="meta-item">📎 ${n.attachments.length}</span>` : ''}
             </div>
@@ -3132,19 +3148,34 @@
       fetchNotices();
     };
 
-    window.closeAddModal = function() {
+    window.closeAddModal = function(force) {
+      if (!force) {
+        const textarea = document.getElementById('addTextarea');
+        const hasContent = (textarea && textarea.value.trim()) || state.addPreview;
+        if (hasContent && !confirm('关闭窗口将丢失已编辑的内容，确定要关闭吗？')) return;
+      }
       state.showAddModal = false;
       state.addPreview = null;
+      state.pendingAttachments = [];
       const textarea = document.getElementById('addTextarea');
       if (textarea) textarea.value = '';
+      const fileInput = document.getElementById('addFiles');
+      if (fileInput) fileInput.value = '';
+      const fileCount = document.getElementById('fileCount');
+      if (fileCount) fileCount.textContent = '';
+      const fileList = document.getElementById('fileList');
+      if (fileList) fileList.innerHTML = '';
       const container = document.getElementById('previewContainer');
       if (container) container.innerHTML = '';
       render();
     };
 
-    window.closeEditModal = function() {
+    window.closeEditModal = function(force) {
+      if (!force && state.editingNotice && !confirm('关闭窗口将丢失已编辑的内容，确定要关闭吗？')) return;
       state.showEditModal = false;
       state.editingNotice = null;
+      state._editPendingFiles = null;
+      state._removedAttachmentIndices = null;
       render();
     };
 
@@ -3488,20 +3519,24 @@ window.handleLogin = async function() {
     };
 
     window.handleAdd = async function() {
+      // Guard against double-submit
+      if (state.isSubmitting) return;
+      state.isSubmitting = true;
+
       const textarea = document.getElementById('addTextarea');
       const text = textarea.value;
-      if (!text.trim()) { alert('请先粘贴通知内容'); return; }
-      const btn = document.querySelector('.modal-actions .btn-primary');
-      btn.disabled = true;
-      btn.textContent = '添加中...';
+      if (!text.trim()) { alert('请先粘贴通知内容'); state.isSubmitting = false; return; }
+
+      const btn = document.getElementById('addSubmitBtn');
+      if (btn) { btn.disabled = true; btn.textContent = '添加中...'; }
 
       const fileInput = document.getElementById('addFiles');
-      const files = fileInput.files;
+      const files = fileInput ? fileInput.files : [];
 
+      let success = false;
       try {
         // Build notice data from preview or raw text
         let noticeData = {};
-        let useFormData = files.length > 0;
 
         if (state.addPreview) {
           noticeData = { ...state.addPreview };
@@ -3537,6 +3572,7 @@ window.handleLogin = async function() {
         noticeData.typeClass = typeToClass[noticeData.type] || 'cat-other';
 
         let res;
+        let newNoticeId = null;
         if (files.length > 0) {
           // Use FormData with both text and files
           const formData = new FormData();
@@ -3560,17 +3596,20 @@ window.handleLogin = async function() {
               created.body = noticeData.body;
               created.keyPoints = noticeData.keyPoints;
               created.links = noticeData.links || [];
+              newNoticeId = created.id;
               // Save the updated notice
               await fetch('/api/notices/' + created.id, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(created)
               });
+            } else if (data.notices && data.notices.length > 0) {
+              newNoticeId = data.notices[0].id;
             }
-            await fetchNotices();
+            success = true;
           } else {
-            const err = await res.json();
-            alert('添加失败：' + err.error);
+            const err = await res.json().catch(() => ({}));
+            alert('添加失败：' + (err.error || '服务器错误'));
           }
         } else {
           // Use JSON direct add
@@ -3580,23 +3619,50 @@ window.handleLogin = async function() {
             body: JSON.stringify(noticeData),
           });
           if (res.ok) {
-            await fetchNotices();
+            const data = await res.json();
+            if (data.notice) newNoticeId = data.notice.id;
+            success = true;
           } else {
-            const err = await res.json();
-            alert('添加失败：' + err.error);
+            const err = await res.json().catch(() => ({}));
+            alert('添加失败：' + (err.error || '服务器错误'));
+          }
+        }
+
+        if (success) {
+          // Reset filters so new notice is visible
+          state.selectedType = 'all';
+          state.search = '';
+          state.showExpired = false;
+          state.highlightNoticeId = newNoticeId;
+          // Refresh notice list
+          await fetchNotices();
+          // Clear and close modal (skip confirmation)
+          textarea.value = '';
+          if (fileInput) fileInput.value = '';
+          state.addPreview = null;
+          state.pendingAttachments = [];
+          const container = document.getElementById('previewContainer');
+          if (container) container.innerHTML = '';
+          state.showAddModal = false;
+          render();
+          // Auto-scroll to highlighted notice after render
+          if (newNoticeId) {
+            setTimeout(() => {
+              const el = document.getElementById('notice-' + newNoticeId);
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('notice-highlight');
+                setTimeout(() => { el.classList.remove('notice-highlight'); state.highlightNoticeId = null; }, 2500);
+              }
+            }, 200);
           }
         }
       } catch(e) {
         alert('添加失败：' + e.message);
+      } finally {
+        state.isSubmitting = false;
+        if (btn && !success) { btn.disabled = false; btn.textContent = '解析添加'; }
       }
-
-      textarea.value = '';
-      fileInput.value = '';
-      state.addPreview = null;
-      state.pendingAttachments = [];
-      document.getElementById('previewContainer').innerHTML = '';
-      state.showAddModal = false;
-      render();
     };
 
     window.navigateToNotice = async function(noticeId) {
