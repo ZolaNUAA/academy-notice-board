@@ -28,12 +28,25 @@ export function writeNotices(notices: Notice[]): void {
   fs.writeFileSync(DATA_FILE, JSON.stringify(notices, null, 2), "utf-8");
 }
 
+function parseLocalDateOnly(value: string | null | undefined): Date | null {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function isDeadlineExpired(deadline: string | null | undefined, now = new Date()): boolean {
+  const deadlineDate = parseLocalDateOnly(deadline);
+  if (!deadlineDate) return false;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return deadlineDate < today;
+}
+
 export function getNotices(): Notice[] {
   const notices = readNotices();
   const now = new Date();
   return notices.map((n) => ({
     ...n,
-    expired: n.deadline ? new Date(n.deadline) < now : false,
+    expired: n.deadline ? isDeadlineExpired(n.deadline, now) : false,
   }));
 }
 
@@ -56,6 +69,9 @@ export function updateNotice(id: string, updates: Partial<Notice>): Notice | nul
   const notices = readNotices();
   const idx = notices.findIndex((n) => n.id === id);
   if (idx === -1) return null;
+  if (updates.deadline !== undefined) {
+    updates.expired = updates.deadline ? isDeadlineExpired(updates.deadline) : false;
+  }
   notices[idx] = { ...notices[idx], ...updates };
   writeNotices(notices);
   return notices[idx];

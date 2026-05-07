@@ -347,9 +347,16 @@
       padding: 9px 10px;
       cursor: pointer;
     }
+    .my-reminder-item.expired {
+      background: #f3f4f6;
+      border-color: #d1d5db;
+      opacity: 0.76;
+    }
     .my-reminder-main { min-width: 0; }
     .my-reminder-title { font-size: 13px; font-weight: 600; color: #431407; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .my-reminder-item.expired .my-reminder-title { color: #6b7280; text-decoration: line-through; }
     .my-reminder-meta { font-size: 12px; color: #9a3412; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .my-reminder-item.expired .my-reminder-meta { color: #6b7280; }
     .my-reminders-empty { font-size: 13px; color: #9a3412; line-height: 1.7; }
 
     /* Category Colors */
@@ -1270,6 +1277,8 @@
       adminUsername: '',
       adminRole: '',
       notices: [],
+      reminderNotices: [],
+      reminderLoading: false,
       selectedType: 'all',
       showExpired: false,
       search: '',
@@ -1415,9 +1424,11 @@
 
     function getReminderNotices() {
       const ids = loadReminderIds();
-      return state.notices
+      const pool = state.reminderNotices.length ? state.reminderNotices : state.notices;
+      return pool
         .filter(n => ids.has(String(n.id)))
         .sort((a, b) => {
+          if (a.expired !== b.expired) return a.expired ? 1 : -1;
           if (!a.deadline) return 1;
           if (!b.deadline) return -1;
           return new Date(a.deadline) - new Date(b.deadline);
@@ -1439,6 +1450,7 @@
     function renderMyRemindersPanel() {
       const ids = loadReminderIds();
       const items = getReminderNotices();
+      const expiredItems = items.filter(n => n.expired);
       const missingCount = Math.max(0, ids.size - items.length);
       if (ids.size === 0 && !state.reminderImportMessage) {
         return `
@@ -1456,7 +1468,9 @@
           <div class="my-reminders-head">
             <div class="my-reminders-title">🔔 我的提醒 ${ids.size ? `<span class="badge">${ids.size}</span>` : ''}</div>
             <div class="my-reminders-actions">
-              ${ids.size ? `<button type="button" class="btn btn-secondary btn-sm" onclick="copyMyReminderLink()">复制我的提醒链接</button>` : ''}
+              ${ids.size ? `<button type="button" class="btn btn-secondary btn-sm" onclick="copyMyReminderLink()">备份我的提醒</button>` : ''}
+              ${ids.size ? `<button type="button" class="btn btn-secondary btn-sm" onclick="copyMyReminderCalendarUrl()">复制日历订阅地址</button>` : ''}
+              ${expiredItems.length ? `<button type="button" class="btn btn-secondary btn-sm" onclick="clearExpiredReminders()">清除过期</button>` : ''}
               ${ids.size ? `<button type="button" class="btn btn-secondary btn-sm" onclick="clearAllReminders()">清空</button>` : ''}
             </div>
           </div>
@@ -1465,7 +1479,7 @@
             <div class="my-reminders-list">
               ${items.slice(0, 6).map(n => {
                 const status = getReminderStatus(n);
-                return `<div class="my-reminder-item" onclick="navigateToNotice('${escapeAttr(n.id)}')">
+                return `<div class="my-reminder-item ${n.expired ? 'expired' : ''}" onclick="navigateToNotice('${escapeAttr(n.id)}')">
                   <div class="my-reminder-main">
                     <div class="my-reminder-title">${escapeHtml(n.title)}</div>
                     <div class="my-reminder-meta">
@@ -1479,9 +1493,29 @@
               }).join('')}
             </div>
             ${items.length > 6 ? `<div class="my-reminders-empty" style="margin-top:8px">还有 ${items.length - 6} 条提醒，可通过搜索或分类查看。</div>` : ''}
-          ` : `<div class="my-reminders-empty">本机有 ${ids.size} 条提醒记录，但当前筛选/分页未加载到对应通知。切回“全部”或搜索标题后可查看。${missingCount ? '' : ''}</div>`}
+          ` : `<div class="my-reminders-empty">本机有 ${ids.size} 条提醒记录，正在匹配通知内容。${state.reminderLoading ? '稍候会自动更新。' : (missingCount ? '部分通知可能已被删除。' : '')}</div>`}
         </div>
       `;
+    }
+
+    async function fetchReminderNotices() {
+      const ids = loadReminderIds();
+      if (!ids.size) {
+        state.reminderNotices = [];
+        return;
+      }
+      state.reminderLoading = true;
+      try {
+        const res = await fetch(`${API}?page=1&limit=100&sort=deadline`);
+        if (res.ok) {
+          const data = await res.json();
+          state.reminderNotices = data.notices || [];
+        }
+      } catch(e) {
+        console.error(e);
+      }
+      state.reminderLoading = false;
+      render();
     }
 
     async function fetchNotices(append = false) {
@@ -1513,6 +1547,7 @@
           } else {
             state.notices = data.notices;
             importRemindersFromUrl();
+            fetchReminderNotices();
           }
           state.totalNotices = data.pagination.total;
           state.totalPages = data.pagination.totalPages;
@@ -3336,7 +3371,7 @@
     window.toggleReminder = function(event, noticeId) {
       event.preventDefault();
       event.stopPropagation();
-      const notice = state.notices.find(n => String(n.id) === String(noticeId));
+      const notice = [...state.notices, ...state.reminderNotices].find(n => String(n.id) === String(noticeId));
       if (notice && !notice.deadline) {
         alert('这条通知没有截止日期，暂不能加入提醒。');
         return;
@@ -3350,11 +3385,25 @@
       saveReminderIds(ids);
       state.reminderImportMessage = '';
       render();
+      fetchReminderNotices();
+    };
+
+    window.clearExpiredReminders = function() {
+      const expiredIds = new Set(getReminderNotices().filter(n => n.expired).map(n => String(n.id)));
+      if (!expiredIds.size) return;
+      if (!confirm(`确定清除 ${expiredIds.size} 条已过期提醒吗？`)) return;
+      const ids = loadReminderIds();
+      expiredIds.forEach(id => ids.delete(id));
+      saveReminderIds(ids);
+      state.reminderImportMessage = '';
+      render();
+      fetchReminderNotices();
     };
 
     window.clearAllReminders = function() {
       if (!confirm('确定清空本机保存的所有提醒吗？')) return;
       saveReminderIds(new Set());
+      state.reminderNotices = [];
       state.reminderImportMessage = '';
       render();
     };
@@ -3367,7 +3416,18 @@
       }
       const url = new URL(window.location.href);
       url.searchParams.set('reminders', ids.map(encodeURIComponent).join(','));
-      copyToClipboard(url.href, '我的提醒链接已复制，可发给自己或换手机导入。');
+      copyToClipboard(url.href, '备份链接已复制。换手机或清缓存后，打开这个链接可恢复“我的提醒”；它不能导入手机日历。');
+    };
+
+    window.copyMyReminderCalendarUrl = function() {
+      const ids = [...loadReminderIds()];
+      if (!ids.length) {
+        alert('还没有选择提醒。');
+        return;
+      }
+      const url = new URL('/api/calendar-feed.ics', window.location.origin);
+      url.searchParams.set('ids', ids.map(encodeURIComponent).join(','));
+      copyToClipboard(url.href, '日历订阅地址已复制。请在手机日历中选择“添加订阅日历/URL日历”后粘贴。');
     };
 
     window.doSearch = function() {

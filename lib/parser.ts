@@ -115,6 +115,12 @@ function toISODate(dt: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+function isDeadlineExpired(deadline: Date, now = new Date()): boolean {
+  const deadlineDate = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return deadlineDate < today;
+}
+
 export function parseNoticeBlock(block: string, idx: number): Notice {
   const header = parseHeader(block);
   const cleanedBody = block.replace(/^【[^】]+】/, "").trim();
@@ -129,7 +135,7 @@ export function parseNoticeBlock(block: string, idx: number): Notice {
   const owner = parseOwner(block);
   const links = extractLinks(block);
   const now = new Date();
-  const expired = deadline ? deadline < now : false;
+  const expired = deadline ? isDeadlineExpired(deadline, now) : false;
 
   return {
     id: `notice-${idx}-${Date.now()}`,

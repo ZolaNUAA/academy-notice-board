@@ -1505,8 +1505,6 @@ function parseNoticeBlock(block, idx) {
     }
   }
 
-  const expired = ddl ? ddl < now : false;
-
   // 无截止日期时自动推测：根据重要性给7-30天
   let finalDdl = ddl;
   if (!finalDdl) {
@@ -1516,6 +1514,8 @@ function parseNoticeBlock(block, idx) {
     inferred.setHours(23, 59, 59, 0);
     finalDdl = inferred;
   }
+  const finalDeadline = toISO(finalDdl);
+  const expired = finalDeadline ? isDeadlineExpired(finalDeadline, now) : false;
 
   return {
     id: `n-${idx}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
@@ -1524,7 +1524,7 @@ function parseNoticeBlock(block, idx) {
     title: cleanTitle,
     body,
     publishDate,
-    deadline: toISO(finalDdl),
+    deadline: finalDeadline,
     importance: imp,
     owner, location, links, keyPoints, expired,
   };
@@ -1575,6 +1575,31 @@ function readNotices() {
 
 function _writeNotices(notices) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(notices, null, 2), 'utf-8');
+}
+
+function parseLocalDateOnly(value) {
+  const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function isDeadlineExpired(deadline, now = new Date()) {
+  const deadlineDate = parseLocalDateOnly(deadline);
+  if (!deadlineDate) return false;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return deadlineDate < today;
+}
+
+function refreshExpiredStatus(notice, now = new Date()) {
+  return {
+    ...notice,
+    expired: notice.deadline ? isDeadlineExpired(notice.deadline, now) : false
+  };
+}
+
+function getFreshNotices() {
+  const now = new Date();
+  return readNotices().map(n => refreshExpiredStatus(n, now));
 }
 
 // Promise-based write mutex — serializes all read-modify-write to prevent race conditions
@@ -2027,7 +2052,7 @@ async function convertCloudURLs(notices) {
 
 async function handleGET(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
-  let notices = readNotices();
+  let notices = getFreshNotices();
 
   const type = url.searchParams.get('type');
   const expired = url.searchParams.get('expired');
@@ -2189,7 +2214,7 @@ function handlePOST(req, res) {
         if (!text) return sendJSON(res, 400, { error: 'text required' });
         const parserConfig = config.parser;
         const useLLM = parserConfig.enabled && parserConfig.useOnSubmit;
-        const newNotices = await dispatchParse(text, useLLM ? parserConfig : null);
+        const newNotices = (await dispatchParse(text, useLLM ? parserConfig : null)).map(refreshExpiredStatus);
 
         // Attach files to first notice (or all if needed)
         if (attachments.length > 0 && newNotices.length > 0) {
@@ -2222,7 +2247,7 @@ function handlePOST(req, res) {
         if (!text) return sendJSON(res, 400, { error: 'text required' });
         const parserConfig = config.parser;
         const useLLM = parserConfig.enabled && parserConfig.useOnSubmit;
-        const newNotices = await dispatchParse(text, useLLM ? parserConfig : null);
+        const newNotices = (await dispatchParse(text, useLLM ? parserConfig : null)).map(refreshExpiredStatus);
         await modifyNotices(existing => [...existing, ...newNotices]);
         logOperation('NOTICE_CREATE', {
           ...getRequestMeta(req),
@@ -2304,7 +2329,7 @@ async function handleAddDirect(req, res) {
       }
       notice.id = `n-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
       notice.createdAt = notice.createdAt || new Date().toISOString();
-      notice.expired = notice.deadline ? new Date(notice.deadline) < new Date() : false;
+      notice.expired = notice.deadline ? isDeadlineExpired(notice.deadline) : false;
       await modifyNotices(existing => { existing.push(notice); return existing; });
       logOperation('NOTICE_CREATE', {
         ...getRequestMeta(req),
@@ -2342,7 +2367,7 @@ async function handleWebhook(req, res) {
       for (const n of notices) {
         n.id = `n-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
         n.createdAt = n.createdAt || now.toISOString();
-        n.expired = n.deadline ? new Date(n.deadline) < now : false;
+        n.expired = n.deadline ? isDeadlineExpired(n.deadline, now) : false;
       }
       await modifyNotices(existing => { existing.push(...notices); return existing; });
       logOperation('WEBHOOK_NOTICE_CREATE', {
@@ -2665,7 +2690,7 @@ async function handleLimits(req, res) {
 // ============ Local Snapshot Backup System ============
 
 function createSnapshotBackup() {
-  const notices = readNotices();
+  const notices = getFreshNotices();
   const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
   // Don't back up sensitive fields
   delete cfg.parser?.apiKey;
@@ -2939,7 +2964,7 @@ function handleStats(req, res) {
     if (access.recentAccess.length > 60) access.recentAccess.length = 60;
   }
 
-  const notices = readNotices();
+  const notices = getFreshNotices();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayCount = notices.filter(n => {
@@ -3062,8 +3087,10 @@ function handleCalendarDownload(req, res, id) {
 // Calendar feed: returns .ics with all active notices that have deadlines
 // Phone can subscribe to this URL for auto-updating calendar
 function handleCalendarFeed(req, res) {
-  const notices = readNotices();
-  const active = notices.filter(n => n.deadline && !n.expired);
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const ids = new Set((url.searchParams.get('ids') || '').split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean));
+  const notices = getFreshNotices();
+  const active = notices.filter(n => n.deadline && !n.expired && (!ids.size || ids.has(String(n.id))));
   const now = new Date().toISOString().replace(/[-:]/g, '').substring(0, 15) + 'Z';
   const escICal = s => String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n').substring(0, 300);
 
@@ -3141,7 +3168,7 @@ function handlePATCH(req, res, id) {
         if (idx === -1) { notFound = true; return notices; }
         before = { ...notices[idx] };
         if (updates.deadline !== undefined) {
-          updates.expired = updates.deadline ? new Date(updates.deadline) < new Date() : false;
+          updates.expired = updates.deadline ? isDeadlineExpired(updates.deadline) : false;
         }
         notices[idx] = { ...notices[idx], ...updates };
         updated = notices[idx];
