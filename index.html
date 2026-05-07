@@ -1942,6 +1942,10 @@
                     <input type="text" id="editOwner" value="${escapeHtml(state.editingNotice.owner)}">
                   </div>
                 </div>
+                <div class="form-group">
+                  <label>关键信息</label>
+                  <textarea id="editKeyPoints" rows="3" placeholder="每行一条关键信息">${(state.editingNotice.keyPoints||[]).join('\n')}</textarea>
+                </div>
                 ${state.editingNotice.links && state.editingNotice.links.length > 0 ? `
                   <div class="form-group">
                     <label>链接</label>
@@ -1974,7 +1978,13 @@
                 <div class="form-group">
                   <label>正文</label>
                   ${FORMAT_TOOLBAR}
-                  <textarea id="editBody" rows="6" onpaste="handleEditPaste(event)">${escapeHtml(state.editingNotice.body)}</textarea>
+                  <textarea id="editBody" rows="6" onpaste="handleEditPaste(event)" oninput="updateEditBodyPreview()">${escapeHtml(state.editingNotice.body)}</textarea>
+                  <h3 style="font-size:15px;color:#1f2937;margin:10px 0 6px;padding-bottom:5px;border-bottom:2px solid #e5e7eb">📌 便签预览</h3>
+                  <div id="editBodyPreview" style="padding:10px;background:#fafafa;border:1px solid #e5e7eb;border-radius:6px;max-height:250px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap"></div>
+                </div>
+                <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="handleEditAIParse()" id="editAIParseBtn">🤖 AI智能解析</button>
+                  <span style="font-size:11px;color:#888" id="editAIParseStatus"></span>
                 </div>
               </div>
               <div class="modal-actions">
@@ -3320,6 +3330,15 @@
       textarea.style.height = Math.min(300, textarea.scrollHeight) + 'px';
     };
 
+    window.updateEditBodyPreview = function() {
+      const textarea = document.getElementById('editBody');
+      const preview = document.getElementById('editBodyPreview');
+      if (!textarea || !preview) return;
+      preview.innerHTML = renderBodyWithImages(textarea.value);
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(300, textarea.scrollHeight) + 'px';
+    };
+
     window.updatePreviewField = function(field, value) {
       if (state.addPreview) {
         state.addPreview[field] = value;
@@ -3815,11 +3834,13 @@ window.handleLogin = async function() {
       state.editingNotice = { ...notice };
       state.showEditModal = true;
       render();
+      setTimeout(() => updateEditBodyPreview(), 100);
     };
 
     window.handleSaveEdit = async function() {
       const id = state.editingNotice.id;
       const newBody = document.getElementById('editBody').value;
+      const kpEl = document.getElementById('editKeyPoints');
       const updates = {
         title: document.getElementById('editTitle').value,
         type: document.getElementById('editType').value,
@@ -3828,6 +3849,7 @@ window.handleLogin = async function() {
         deadline: document.getElementById('editDeadline').value || null,
         owner: document.getElementById('editOwner').value,
         body: newBody,
+        keyPoints: kpEl && kpEl.value.trim() ? kpEl.value.split('\n').filter(p => p.trim()) : [],
       };
 
       // Upload pending edit files
@@ -3901,11 +3923,57 @@ window.handleLogin = async function() {
             if (data.url) {
               const ta = document.getElementById('editBody');
               ta.value += '\n' + `![${data.name}](${data.url})`;
-              updateBodyPreview();
+              updateEditBodyPreview();
             }
           } catch(err) { alert('图片上传失败：' + err.message); }
           break;
         }
+      }
+    };
+
+    window.handleEditAIParse = async function() {
+      const textarea = document.getElementById('editBody');
+      const btn = document.getElementById('editAIParseBtn');
+      const status = document.getElementById('editAIParseStatus');
+      if (!textarea || !btn) return;
+      const text = textarea.value;
+      if (!text.trim()) { alert('正文为空，无法解析'); return; }
+
+      btn.disabled = true;
+      btn.textContent = '⏳ 解析中...';
+      if (status) { status.textContent = '正在调用AI，约需5-15秒...'; status.style.color = '#888'; }
+
+      try {
+        const res = await fetch('/api/parse/llm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        if (data.notices && data.notices.length > 0) {
+          const parsed = data.notices[0];
+          // Update form fields
+          if (parsed.title) document.getElementById('editTitle').value = parsed.title;
+          if (parsed.type) document.getElementById('editType').value = parsed.type;
+          if (parsed.importance != null) document.getElementById('editImportance').value = parsed.importance;
+          if (parsed.deadline) document.getElementById('editDeadline').value = parsed.deadline;
+          if (parsed.owner) document.getElementById('editOwner').value = parsed.owner;
+          if (parsed.body) {
+            document.getElementById('editBody').value = parsed.body;
+            updateEditBodyPreview();
+          }
+          if (parsed.keyPoints && parsed.keyPoints.length > 0) {
+            document.getElementById('editKeyPoints').value = parsed.keyPoints.join('\n');
+          }
+          if (status) { status.textContent = '✅ AI解析完成，请检查各字段'; status.style.color = '#16a34a'; }
+        } else {
+          if (status) { status.textContent = '❌ ' + (data.error || '解析返回空结果'); status.style.color = '#dc2626'; }
+        }
+      } catch(e) {
+        if (status) { status.textContent = '❌ 请求失败: ' + e.message; status.style.color = '#dc2626'; }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🤖 AI智能解析';
       }
     };
 
