@@ -609,6 +609,9 @@
       transition: all 0.2s;
     }
     .file-upload-label:hover { background: #f1f5f9; border-color: #94a3b8; color: #475569; }
+    .file-upload-area.drag-over .file-upload-label {
+      background: #e0ebff; border-color: #5d8cff; color: #103f9a;
+    }
     .file-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
     .file-item {
       display: flex; align-items: center; gap: 8px;
@@ -1229,6 +1232,8 @@
       addPreview: null,
       pendingAttachments: [], // 待上传的附件（仅文件名）
       isSubmitting: false, // 防重复提交
+      aiParsed: false, // 是否已使用AI解析
+      autoRefreshId: null, // 自动刷新定时器ID
       highlightNoticeId: null, // 新增通知高亮ID
       stats: null,
       typeCounts: null,
@@ -1859,11 +1864,11 @@
               <h2>➕ 添加通知</h2>
               <p>粘贴微信群通知文本，系统将自动解析分类、提取关键信息</p>
               <textarea id="addTextarea" rows="6" placeholder="粘贴通知文本或直接粘贴图片..." oninput="handleAddInput(this.value)" onpaste="handlePaste(event)"></textarea>
-              <div class="file-upload-area">
+              <div class="file-upload-area" id="addFileArea" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleAddFileDrop(event)">
                 <input type="file" id="addFiles" multiple onchange="handleFilesChange(this.files)">
                 <label for="addFiles" class="file-upload-label">
                   <span style="font-size:18px">📎</span>
-                  <span>选择附件文件</span>
+                  <span>选择或拖拽附件文件</span>
                 </label>
                 <span id="fileCount" style="color:#94a3b8;font-size:12px;margin-left:8px"></span>
                 <div id="fileList" class="file-list"></div>
@@ -1959,10 +1964,10 @@
                     </div>
                   </div>
                 ` : '<div id="editPendingFiles" style="margin-bottom:6px"></div>'}
-                <div class="file-upload-area" style="margin-bottom:12px">
+                <div class="file-upload-area" id="editFileArea" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleEditFileDrop(event)" style="margin-bottom:12px">
                   <input type="file" id="editFiles" multiple onchange="handleEditFilesChange(this.files)">
                   <label for="editFiles" class="file-upload-label" style="font-size:12px;padding:6px 12px">
-                    <span>📎 添加附件/图片</span>
+                    <span>📎 添加附件/图片（可拖拽）</span>
                   </label>
                   <span style="font-size:11px;color:#888;margin-left:6px">也可在正文框Ctrl+V粘贴图片</span>
                 </div>
@@ -3159,6 +3164,7 @@
       }
       state.showAddModal = false;
       state.addPreview = null;
+      state.aiParsed = false;
       state.pendingAttachments = [];
       const textarea = document.getElementById('addTextarea');
       if (textarea) textarea.value = '';
@@ -3277,6 +3283,7 @@
         const data = await res.json();
         if (data.notices && data.notices.length > 0) {
           state.addPreview = data.notices[0];
+          state.aiParsed = true;
           // Merge locally extracted links that AI may have missed
           if (localLinks.length > 0) {
             const aiLinks = state.addPreview.links || [];
@@ -3428,6 +3435,45 @@
       renderFileList();
     };
 
+    // ============ Drag & Drop ============
+    window.handleDragOver = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.classList.add('drag-over');
+    };
+
+    window.handleDragLeave = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.classList.remove('drag-over');
+    };
+
+    window.handleAddFileDrop = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.classList.remove('drag-over');
+      const files = e.dataTransfer.files;
+      if (!files.length) return;
+      const input = document.getElementById('addFiles');
+      const dt = new DataTransfer();
+      Array.from(files).forEach(f => dt.items.add(f));
+      input.files = dt.files;
+      handleFilesChange(input.files);
+    };
+
+    window.handleEditFileDrop = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.classList.remove('drag-over');
+      const files = e.dataTransfer.files;
+      if (!files.length) return;
+      const input = document.getElementById('editFiles');
+      const dt = new DataTransfer();
+      Array.from(files).forEach(f => dt.items.add(f));
+      input.files = dt.files;
+      handleEditFilesChange(input.files);
+    };
+
 window.handleLogin = async function() {
       const pwd = document.getElementById('loginPwdInput').value;
       const btn = document.getElementById('loginPwdBtn');
@@ -3486,6 +3532,7 @@ window.handleLogin = async function() {
         state.adminUsername = loginData.username || '';
         state.adminRole = loginData.role || 'admin';
         state.viewMode = 'sticky';
+        startAutoRefresh();
         render();
         fetchStats(); // record authenticated visit with admin session cookie
         return;
@@ -3501,6 +3548,7 @@ window.handleLogin = async function() {
 
       if (verifyRes.ok && verifyData.success) {
         state.verified = true;
+        startAutoRefresh();
         render();
         fetchStats(); // record authenticated visit
       } else {
@@ -3514,6 +3562,7 @@ window.handleLogin = async function() {
       state.adminUsername = '';
       state.adminRole = '';
       state.viewMode = 'sticky';
+      if (state.autoRefreshId) { clearInterval(state.autoRefreshId); state.autoRefreshId = null; }
       render();
     };
 
@@ -3532,6 +3581,15 @@ window.handleLogin = async function() {
 
       const btn = document.getElementById('addSubmitBtn');
       if (btn) { btn.disabled = true; btn.textContent = '添加中...'; }
+
+      // 未使用AI解析时确认
+      if (state.addPreview && !state.aiParsed) {
+        if (!confirm('未使用AI智能解析，是否继续提交？\n\n点击"确定"直接提交\n点击"取消"使用AI智能解析')) {
+          state.isSubmitting = false;
+          if (btn) { btn.disabled = false; btn.textContent = '解析添加'; }
+          return handleAIParse();
+        }
+      }
 
       const fileInput = document.getElementById('addFiles');
       const files = fileInput ? fileInput.files : [];
@@ -3867,6 +3925,36 @@ window.handleLogin = async function() {
         }).join('');
       }
     };
+
+    // ============ Auto-Refresh ============
+    const AUTO_REFRESH_MS = 60000; // 活跃时每60秒刷新
+    const AUTO_REFRESH_IDLE_MS = 300000; // 后台时每5分钟刷新
+
+    function startAutoRefresh() {
+      if (state.autoRefreshId) return;
+      let interval = AUTO_REFRESH_MS;
+
+      const doRefresh = () => {
+        if (state.showAddModal || state.showEditModal || state.showLoginModal || state.isSubmitting) return;
+        fetchNotices();
+        fetchStats();
+      };
+
+      state.autoRefreshId = setInterval(() => doRefresh(), interval);
+
+      // 页面可见性切换时调整刷新频率
+      document.addEventListener('visibilitychange', () => {
+        if (!state.autoRefreshId) return;
+        clearInterval(state.autoRefreshId);
+        interval = document.hidden ? AUTO_REFRESH_IDLE_MS : AUTO_REFRESH_MS;
+        state.autoRefreshId = setInterval(() => doRefresh(), interval);
+      });
+
+      // 页面关闭时清理
+      window.addEventListener('beforeunload', () => {
+        if (state.autoRefreshId) clearInterval(state.autoRefreshId);
+      });
+    }
 
     // ============ Init ============
     fetchNotices();
