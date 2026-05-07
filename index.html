@@ -358,6 +358,7 @@
     .my-reminder-meta { font-size: 12px; color: #9a3412; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
     .my-reminder-item.expired .my-reminder-meta { color: #6b7280; }
     .my-reminders-empty { font-size: 13px; color: #9a3412; line-height: 1.7; }
+    .my-reminders-more { margin-top: 10px; display: flex; justify-content: center; }
 
     /* Category Colors */
     .cat-research { background: linear-gradient(145deg, #fff7ed, #ffedd5); border-left: 4px solid #f97316; }
@@ -984,6 +985,37 @@
     body.dark-mode .info-chip.chip-location { background: rgba(59,130,246,0.15); color: #7ca3f5; }
     body.dark-mode .info-chip.chip-owner { background: rgba(147,51,234,0.15); color: #c084fc; }
     body.dark-mode .info-chip.chip-urgent { background: rgba(220,38,38,0.2); color: #fca5a5; }
+    body.dark-mode .reminder-btn {
+      background: rgba(245,158,11,0.14);
+      border-color: rgba(245,158,11,0.52);
+      color: #fbbf24;
+    }
+    body.dark-mode .reminder-btn.active {
+      background: #b45309;
+      border-color: #d97706;
+      color: #fff7ed;
+    }
+    body.dark-mode .my-reminders-panel {
+      background: rgba(24, 26, 44, 0.94);
+      border-color: rgba(245,158,11,0.28);
+      border-left-color: #d97706;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+    }
+    body.dark-mode .my-reminders-title { color: #fbbf24; }
+    body.dark-mode .my-reminder-item {
+      background: rgba(30,32,56,0.78);
+      border-color: rgba(245,158,11,0.18);
+    }
+    body.dark-mode .my-reminder-item.expired {
+      background: rgba(31,41,55,0.78);
+      border-color: rgba(148,163,184,0.22);
+      opacity: 0.72;
+    }
+    body.dark-mode .my-reminder-title { color: #f8fafc; }
+    body.dark-mode .my-reminder-item.expired .my-reminder-title { color: #94a3b8; }
+    body.dark-mode .my-reminder-meta { color: #fcd34d; }
+    body.dark-mode .my-reminder-item.expired .my-reminder-meta { color: #94a3b8; }
+    body.dark-mode .my-reminders-empty { color: #fcd34d; }
     body.dark-mode .key-points {
       background: rgba(15, 23, 42, 0.42);
       border-color: rgba(148, 163, 184, 0.18);
@@ -1279,6 +1311,7 @@
       notices: [],
       reminderNotices: [],
       reminderLoading: false,
+      reminderVisibleCount: 6,
       selectedType: 'all',
       showExpired: false,
       search: '',
@@ -1466,6 +1499,7 @@
         const profile = await res.json();
         const ids = new Set((profile.reminders || []).map(String).filter(Boolean));
         saveReminderIds(ids);
+        state.reminderVisibleCount = 6;
         localStorage.setItem(REMINDER_DEVICE_KEY, profile.deviceId || deviceId);
         state.reminderImportMessage = `已恢复 ${ids.size} 条提醒到本机`;
         fetchReminderNotices();
@@ -1505,6 +1539,8 @@
       const ids = loadReminderIds();
       const items = getReminderNotices();
       const expiredItems = items.filter(n => n.expired);
+      const visibleCount = Math.max(6, state.reminderVisibleCount || 6);
+      const visibleItems = items.slice(0, visibleCount);
       const missingCount = Math.max(0, ids.size - items.length);
       if (ids.size === 0 && !state.reminderImportMessage) {
         return `
@@ -1531,7 +1567,7 @@
           ${state.reminderImportMessage ? `<div class="my-reminders-empty" style="margin-bottom:8px">${state.reminderImportMessage}</div>` : ''}
           ${items.length ? `
             <div class="my-reminders-list">
-              ${items.slice(0, 6).map(n => {
+              ${visibleItems.map(n => {
                 const status = getReminderStatus(n);
                 return `<div class="my-reminder-item ${n.expired ? 'expired' : ''}" onclick="navigateToNotice('${escapeAttr(n.id)}')">
                   <div class="my-reminder-main">
@@ -1546,7 +1582,11 @@
                 </div>`;
               }).join('')}
             </div>
-            ${items.length > 6 ? `<div class="my-reminders-empty" style="margin-top:8px">还有 ${items.length - 6} 条提醒，可通过搜索或分类查看。</div>` : ''}
+            ${items.length > visibleCount ? `
+              <div class="my-reminders-more">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="loadMoreReminders()">加载更多 (${visibleCount}/${items.length})</button>
+              </div>
+            ` : items.length > 6 ? `<div class="my-reminders-empty" style="margin-top:8px">已显示全部 ${items.length} 条提醒</div>` : ''}
           ` : `<div class="my-reminders-empty">本机有 ${ids.size} 条提醒记录，正在匹配通知内容。${state.reminderLoading ? '稍候会自动更新。' : (missingCount ? '部分通知可能已被删除。' : '')}</div>`}
         </div>
       `;
@@ -3422,6 +3462,11 @@
     }
 
     // ============ Handlers ============
+    window.loadMoreReminders = function() {
+      state.reminderVisibleCount = Math.min(getReminderNotices().length, (state.reminderVisibleCount || 6) + 6);
+      render();
+    };
+
     window.toggleReminder = function(event, noticeId) {
       event.preventDefault();
       event.stopPropagation();
@@ -3438,6 +3483,7 @@
       }
       saveReminderIds(ids);
       syncReminderProfile();
+      if (ids.size <= 6) state.reminderVisibleCount = 6;
       state.reminderImportMessage = '';
       render();
       fetchReminderNotices();
@@ -3451,6 +3497,7 @@
       expiredIds.forEach(id => ids.delete(id));
       saveReminderIds(ids);
       syncReminderProfile();
+      state.reminderVisibleCount = 6;
       state.reminderImportMessage = '';
       render();
       fetchReminderNotices();
@@ -3461,6 +3508,7 @@
       saveReminderIds(new Set());
       syncReminderProfile();
       state.reminderNotices = [];
+      state.reminderVisibleCount = 6;
       state.reminderImportMessage = '';
       render();
     };
