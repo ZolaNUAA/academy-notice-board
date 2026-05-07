@@ -1688,7 +1688,12 @@
           case 'publishDate':
             if (!a.publishDate) return 1;
             if (!b.publishDate) return -1;
-            return new Date(b.publishDate) - new Date(a.publishDate);
+            const pdDiff = new Date(b.publishDate) - new Date(a.publishDate);
+            if (pdDiff !== 0) return pdDiff;
+            // Same date, use createdAt or ID timestamp as tiebreaker
+            const tsA = a.createdAt ? new Date(a.createdAt).getTime() : parseInt((a.id || '').split('-')[1]) || 0;
+            const tsB = b.createdAt ? new Date(b.createdAt).getTime() : parseInt((b.id || '').split('-')[1]) || 0;
+            return tsB - tsA;
           case 'type':
             return a.type.localeCompare(b.type);
           default:
@@ -3887,6 +3892,7 @@ window.handleLogin = async function() {
       await updateNotice(id, updates);
       state.showEditModal = false;
       state.editingNotice = null;
+      render();
     };
 
     window.handleEditFilesChange = function(files) {

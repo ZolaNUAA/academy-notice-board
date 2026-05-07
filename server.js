@@ -2056,7 +2056,12 @@ async function handleGET(req, res) {
     if (sortBy === 'publishDate' || sortBy === 'date') {
       if (!a.publishDate) return 1;
       if (!b.publishDate) return -1;
-      return new Date(b.publishDate) - new Date(a.publishDate); // newest first
+      const diff = new Date(b.publishDate) - new Date(a.publishDate);
+      if (diff !== 0) return diff; // newest first
+      // Same date, use createdAt or ID timestamp as tiebreaker
+      const tsA = a.createdAt ? new Date(a.createdAt).getTime() : parseInt((a.id || '').split('-')[1]) || 0;
+      const tsB = b.createdAt ? new Date(b.createdAt).getTime() : parseInt((b.id || '').split('-')[1]) || 0;
+      return tsB - tsA;
     }
     if (sortBy === 'deadline') {
       if (!a.deadline) return 1;
@@ -2298,6 +2303,7 @@ async function handleAddDirect(req, res) {
         notice.attachments = attachments;
       }
       notice.id = `n-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+      notice.createdAt = notice.createdAt || new Date().toISOString();
       notice.expired = notice.deadline ? new Date(notice.deadline) < new Date() : false;
       await modifyNotices(existing => { existing.push(notice); return existing; });
       logOperation('NOTICE_CREATE', {
@@ -2335,6 +2341,7 @@ async function handleWebhook(req, res) {
       const now = new Date();
       for (const n of notices) {
         n.id = `n-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+        n.createdAt = n.createdAt || now.toISOString();
         n.expired = n.deadline ? new Date(n.deadline) < now : false;
       }
       await modifyNotices(existing => { existing.push(...notices); return existing; });
