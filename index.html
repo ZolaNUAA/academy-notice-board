@@ -299,8 +299,58 @@
     .attachment-remove:hover { color: #e74c3c; }
 
     .note-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(0,0,0,0.1); }
+    .note-footer-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     .note-date-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
     .note-owner { font-size: 12px; color: #888; }
+    .reminder-btn {
+      border: 1px solid #f59e0b;
+      background: #fffbeb;
+      color: #92400e;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .reminder-btn.active { background: #f59e0b; color: #fff; border-color: #d97706; }
+    .reminder-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .my-reminders-panel {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-left: 4px solid #f97316;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    }
+    .my-reminders-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .my-reminders-title { font-weight: 700; color: #9a3412; font-size: 15px; }
+    .my-reminders-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .my-reminders-list { display: flex; flex-direction: column; gap: 8px; }
+    .my-reminder-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(251,146,60,0.22);
+      border-radius: 8px;
+      padding: 9px 10px;
+      cursor: pointer;
+    }
+    .my-reminder-main { min-width: 0; }
+    .my-reminder-title { font-size: 13px; font-weight: 600; color: #431407; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .my-reminder-meta { font-size: 12px; color: #9a3412; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .my-reminders-empty { font-size: 13px; color: #9a3412; line-height: 1.7; }
 
     /* Category Colors */
     .cat-research { background: linear-gradient(145deg, #fff7ed, #ffedd5); border-left: 4px solid #f97316; }
@@ -1309,6 +1359,7 @@
 
     // ============ API ============
     const API = '/api/notices';
+    const REMINDER_STORAGE_KEY = 'academyNoticeReminderIds:v1';
 
     // ============ Clipboard helper ============
     function copyToClipboard(text, successMsg = '已复制！') {
@@ -1324,6 +1375,113 @@
         document.body.removeChild(ta);
         alert(successMsg);
       }
+    }
+
+    function loadReminderIds() {
+      try {
+        const raw = localStorage.getItem(REMINDER_STORAGE_KEY);
+        const ids = JSON.parse(raw || '[]');
+        return new Set(Array.isArray(ids) ? ids.map(String).filter(Boolean) : []);
+      } catch(e) {
+        return new Set();
+      }
+    }
+
+    function saveReminderIds(ids) {
+      localStorage.setItem(REMINDER_STORAGE_KEY, JSON.stringify([...ids]));
+    }
+
+    function isNoticeReminded(id) {
+      return loadReminderIds().has(String(id));
+    }
+
+    function importRemindersFromUrl() {
+      if (state._remindersImportedFromUrl) return;
+      state._remindersImportedFromUrl = true;
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get('reminders');
+      if (!raw) return;
+      const imported = raw.split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
+      if (!imported.length) return;
+      const ids = loadReminderIds();
+      imported.forEach(id => ids.add(id));
+      saveReminderIds(ids);
+      state.reminderImportMessage = `已导入 ${imported.length} 条提醒到本机`;
+      params.delete('reminders');
+      const qs = params.toString();
+      const cleanUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+      history.replaceState(null, '', cleanUrl);
+    }
+
+    function getReminderNotices() {
+      const ids = loadReminderIds();
+      return state.notices
+        .filter(n => ids.has(String(n.id)))
+        .sort((a, b) => {
+          if (!a.deadline) return 1;
+          if (!b.deadline) return -1;
+          return new Date(a.deadline) - new Date(b.deadline);
+        });
+    }
+
+    function getReminderStatus(notice) {
+      if (!notice.deadline) return { text: '未设置截止日期', cls: 'ddl-normal' };
+      return { text: getDDLText(notice.deadline, notice.expired), cls: getDDLClass(notice.deadline, notice.expired) };
+    }
+
+    function renderReminderButton(notice) {
+      const active = isNoticeReminded(notice.id);
+      const disabled = !notice.deadline;
+      const title = disabled ? '这条通知没有截止日期，暂不能加入提醒' : (active ? '取消这条通知的本机提醒' : '加入我的提醒');
+      return `<button type="button" class="reminder-btn ${active ? 'active' : ''}" ${disabled ? 'disabled' : ''} title="${title}" onclick="toggleReminder(event,'${escapeAttr(notice.id)}')">${active ? '已提醒' : '提醒我'}</button>`;
+    }
+
+    function renderMyRemindersPanel() {
+      const ids = loadReminderIds();
+      const items = getReminderNotices();
+      const missingCount = Math.max(0, ids.size - items.length);
+      if (ids.size === 0 && !state.reminderImportMessage) {
+        return `
+          <div class="my-reminders-panel">
+            <div class="my-reminders-head">
+              <div class="my-reminders-title">🔔 我的提醒</div>
+            </div>
+            <div class="my-reminders-empty">点通知卡片上的“提醒我”，以后用同一台手机微信打开看板时，会优先看到自己关注的通知。</div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="my-reminders-panel">
+          <div class="my-reminders-head">
+            <div class="my-reminders-title">🔔 我的提醒 ${ids.size ? `<span class="badge">${ids.size}</span>` : ''}</div>
+            <div class="my-reminders-actions">
+              ${ids.size ? `<button type="button" class="btn btn-secondary btn-sm" onclick="copyMyReminderLink()">复制我的提醒链接</button>` : ''}
+              ${ids.size ? `<button type="button" class="btn btn-secondary btn-sm" onclick="clearAllReminders()">清空</button>` : ''}
+            </div>
+          </div>
+          ${state.reminderImportMessage ? `<div class="my-reminders-empty" style="margin-bottom:8px">${state.reminderImportMessage}</div>` : ''}
+          ${items.length ? `
+            <div class="my-reminders-list">
+              ${items.slice(0, 6).map(n => {
+                const status = getReminderStatus(n);
+                return `<div class="my-reminder-item" onclick="navigateToNotice('${escapeAttr(n.id)}')">
+                  <div class="my-reminder-main">
+                    <div class="my-reminder-title">${escapeHtml(n.title)}</div>
+                    <div class="my-reminder-meta">
+                      <span>${getTypeIcon(n.type)} ${escapeHtml(n.type)}</span>
+                      <span class="${status.cls}">${status.text}</span>
+                      ${n.owner && n.owner !== '未指定' ? `<span>👤 ${escapeHtml(n.owner)}</span>` : ''}
+                    </div>
+                  </div>
+                  <button type="button" class="reminder-btn active" onclick="toggleReminder(event,'${escapeAttr(n.id)}')">取消</button>
+                </div>`;
+              }).join('')}
+            </div>
+            ${items.length > 6 ? `<div class="my-reminders-empty" style="margin-top:8px">还有 ${items.length - 6} 条提醒，可通过搜索或分类查看。</div>` : ''}
+          ` : `<div class="my-reminders-empty">本机有 ${ids.size} 条提醒记录，但当前筛选/分页未加载到对应通知。切回“全部”或搜索标题后可查看。${missingCount ? '' : ''}</div>`}
+        </div>
+      `;
     }
 
     async function fetchNotices(append = false) {
@@ -1354,6 +1512,7 @@
             state.notices = [...state.notices, ...data.notices];
           } else {
             state.notices = data.notices;
+            importRemindersFromUrl();
           }
           state.totalNotices = data.pagination.total;
           state.totalPages = data.pagination.totalPages;
@@ -1805,6 +1964,8 @@
               }).join('')}`;
             })()}
           </div>
+
+          ${renderMyRemindersPanel()}
 
           ${state.loading ? '<div class="loading">加载中...</div>' : ''}
 
@@ -2968,6 +3129,10 @@
       copyToClipboard(document.getElementById('calendarFeedUrl').value, '日历订阅地址已复制！');
     };
 
+    function isWeChatBrowser() {
+      return /MicroMessenger/i.test(navigator.userAgent || '');
+    }
+
     window.copyWebhookUrl = function() {
       copyToClipboard(document.getElementById('webhookUrl').value, 'Webhook地址已复制！');
     };
@@ -3111,12 +3276,13 @@
           ` : ''}
           <div class="note-footer">
             ${n.owner && n.owner !== '未指定' ? `<span class="note-owner">👤 ${escapeHtml(n.owner)}</span>` : '<span></span>'}
-            ${state.isAdmin ? `
-              <div>
+            <div class="note-footer-actions">
+              ${renderReminderButton(n)}
+              ${state.isAdmin ? `
                 <button type="button" class="btn btn-secondary btn-sm" onclick="handleEdit('${n.id}')">编辑</button>
                 <button type="button" class="btn btn-danger btn-sm" onclick="deleteNotice('${n.id}')">删除</button>
-              </div>
-            ` : ''}
+              ` : ''}
+            </div>
           </div>
         </div>
       `;
@@ -3142,10 +3308,11 @@
           </div>
           ${state.isAdmin ? `
             <div class="actions">
+              ${renderReminderButton(n)}
               <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation();handleEdit('${n.id}')">编辑</button>
               <button type="button" class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteNotice('${n.id}')">删除</button>
             </div>
-          ` : ''}
+          ` : `<div class="actions">${renderReminderButton(n)}</div>`}
         </div>
       `;
     }
@@ -3166,6 +3333,43 @@
     }
 
     // ============ Handlers ============
+    window.toggleReminder = function(event, noticeId) {
+      event.preventDefault();
+      event.stopPropagation();
+      const notice = state.notices.find(n => String(n.id) === String(noticeId));
+      if (notice && !notice.deadline) {
+        alert('这条通知没有截止日期，暂不能加入提醒。');
+        return;
+      }
+      const ids = loadReminderIds();
+      if (ids.has(String(noticeId))) {
+        ids.delete(String(noticeId));
+      } else {
+        ids.add(String(noticeId));
+      }
+      saveReminderIds(ids);
+      state.reminderImportMessage = '';
+      render();
+    };
+
+    window.clearAllReminders = function() {
+      if (!confirm('确定清空本机保存的所有提醒吗？')) return;
+      saveReminderIds(new Set());
+      state.reminderImportMessage = '';
+      render();
+    };
+
+    window.copyMyReminderLink = function() {
+      const ids = [...loadReminderIds()];
+      if (!ids.length) {
+        alert('还没有选择提醒。');
+        return;
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.set('reminders', ids.map(encodeURIComponent).join(','));
+      copyToClipboard(url.href, '我的提醒链接已复制，可发给自己或换手机导入。');
+    };
+
     window.doSearch = function() {
       state.search = document.getElementById('searchInput').value;
       fetchNotices();
@@ -3775,6 +3979,11 @@ window.handleLogin = async function() {
       const absoluteUrl = new URL(calendarUrl, window.location.origin).href;
       const notice = state.notices.find(n => n.id === noticeId);
       const safeTitle = notice?.title || '通知截止提醒';
+
+      if (isWeChatBrowser()) {
+        copyToClipboard(absoluteUrl, '日历链接已复制。微信内无法直接添加日历，请点右上角“...”选择在浏览器打开后再添加。');
+        return;
+      }
 
       try {
         if (navigator.share) {
