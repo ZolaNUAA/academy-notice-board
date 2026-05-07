@@ -29,11 +29,15 @@ const CONFIG_FILE = USE_MNT ? path.join(BASE_DIR, 'config.json') : path.join(__d
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const LOG_FILE = path.join(DATA_DIR, 'operation.log');
+const REMINDER_DIR = path.join(DATA_DIR, 'reminders');
 
 // Ensure backup directory exists
 try {
   if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 } catch(e) { console.warn('[Backup] Failed to create backup dir:', e.message); }
+try {
+  if (!fs.existsSync(REMINDER_DIR)) fs.mkdirSync(REMINDER_DIR, { recursive: true });
+} catch(e) { console.warn('[Reminders] Failed to create reminders dir:', e.message); }
 // When deployed on cloud, set BASE_URL to the public URL of the service
 // e.g., https://notice-board2-252176-5-1259025170.sh.run.tcloudbase.com
 const BASE_URL = process.env.BASE_URL || 'http://124.221.152.130';
@@ -1602,6 +1606,62 @@ function getFreshNotices() {
   return readNotices().map(n => refreshExpiredStatus(n, now));
 }
 
+function sanitizeDeviceId(value) {
+  const id = String(value || '').trim();
+  return /^[a-zA-Z0-9_-]{12,64}$/.test(id) ? id : null;
+}
+
+function getReminderFile(deviceId) {
+  const safeId = sanitizeDeviceId(deviceId);
+  if (!safeId) return null;
+  return path.join(REMINDER_DIR, `${safeId}.json`);
+}
+
+function readReminderProfile(deviceId) {
+  const safeId = sanitizeDeviceId(deviceId);
+  const file = getReminderFile(safeId);
+  const now = new Date().toISOString();
+  const empty = { deviceId: safeId, reminders: [], createdAt: now, updatedAt: now };
+  if (!safeId || !file) return null;
+  try {
+    if (!fs.existsSync(file)) return empty;
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    const reminders = Array.isArray(parsed.reminders) ? parsed.reminders.map(String).filter(Boolean) : [];
+    return {
+      deviceId: safeId,
+      reminders: [...new Set(reminders)].slice(0, 100),
+      createdAt: parsed.createdAt || now,
+      updatedAt: parsed.updatedAt || now
+    };
+  } catch {
+    return empty;
+  }
+}
+
+const reminderLocks = new Map();
+
+function modifyReminderProfile(deviceId, modifier) {
+  const safeId = sanitizeDeviceId(deviceId);
+  if (!safeId) return Promise.reject(new Error('invalid deviceId'));
+  const prev = reminderLocks.get(safeId) || Promise.resolve();
+  const next = prev.then(async () => {
+    const current = readReminderProfile(safeId);
+    const updated = await modifier(current);
+    const now = new Date().toISOString();
+    const profile = {
+      deviceId: safeId,
+      reminders: [...new Set((updated.reminders || []).map(String).filter(Boolean))].slice(0, 100),
+      createdAt: updated.createdAt || current.createdAt || now,
+      updatedAt: now
+    };
+    const file = getReminderFile(safeId);
+    fs.writeFileSync(file, JSON.stringify(profile, null, 2), 'utf-8');
+    return profile;
+  });
+  reminderLocks.set(safeId, next.catch(() => {}));
+  return next;
+}
+
 // Promise-based write mutex — serializes all read-modify-write to prevent race conditions
 let _writeMutex = Promise.resolve();
 
@@ -3086,9 +3146,15 @@ function handleCalendarDownload(req, res, id) {
 
 // Calendar feed: returns .ics with all active notices that have deadlines
 // Phone can subscribe to this URL for auto-updating calendar
-function handleCalendarFeed(req, res) {
+function handleCalendarFeed(req, res, routeDeviceId = null) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const ids = new Set((url.searchParams.get('ids') || '').split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean));
+  const deviceId = sanitizeDeviceId(routeDeviceId || url.searchParams.get('device'));
+  if (deviceId) {
+    const profile = readReminderProfile(deviceId);
+    ids.clear();
+    for (const id of profile.reminders) ids.add(String(id));
+  }
   const notices = getFreshNotices();
   const active = notices.filter(n => n.deadline && !n.expired && (!ids.size || ids.has(String(n.id))));
   const now = new Date().toISOString().replace(/[-:]/g, '').substring(0, 15) + 'Z';
@@ -3137,6 +3203,45 @@ function handleCalendarFeed(req, res) {
     'Cache-Control': 'public, max-age=3600'
   });
   res.end(ics);
+}
+
+function handleReminderProfile(req, res, deviceId) {
+  const safeId = sanitizeDeviceId(deviceId);
+  if (!safeId) return sendJSON(res, 400, { error: 'invalid deviceId' });
+
+  if (req.method === 'GET') {
+    const profile = readReminderProfile(safeId);
+    return sendJSON(res, 200, profile);
+  }
+
+  if (req.method === 'POST') {
+    parseJSONBody(req).then(body => {
+      const noticeId = String(body.noticeId || '').trim();
+      if (!noticeId) return sendJSON(res, 400, { error: 'noticeId required' });
+      const enabled = body.enabled !== false;
+      return modifyReminderProfile(safeId, profile => {
+        const ids = new Set(profile.reminders || []);
+        if (enabled) ids.add(noticeId);
+        else ids.delete(noticeId);
+        profile.reminders = [...ids];
+        return profile;
+      }).then(profile => sendJSON(res, 200, profile));
+    }).catch(e => sendJSON(res, 500, { error: e.message || 'reminder update failed' }));
+    return;
+  }
+
+  if (req.method === 'PUT') {
+    parseJSONBody(req).then(body => {
+      const reminders = Array.isArray(body.reminders) ? body.reminders.map(String).filter(Boolean) : [];
+      return modifyReminderProfile(safeId, profile => {
+        profile.reminders = reminders;
+        return profile;
+      }).then(profile => sendJSON(res, 200, profile));
+    }).catch(e => sendJSON(res, 500, { error: e.message || 'reminder save failed' }));
+    return;
+  }
+
+  sendJSON(res, 405, { error: 'method not allowed' });
 }
 
 function handleDELETE(req, res, id) {
@@ -3251,6 +3356,20 @@ const server = http.createServer((req, res) => {
   // Calendar feed: URL subscription for phone calendar (all active deadlines)
   if (url.pathname === '/api/calendar-feed.ics') {
     if (req.method === 'GET') return handleCalendarFeed(req, res);
+  }
+
+  const reminderCalendarMatch = url.pathname.match(/^\/api\/reminders\/([^/]+)\/calendar\.ics$/);
+  if (reminderCalendarMatch) {
+    if (req.method === 'GET') {
+      return handleCalendarFeed(req, res, reminderCalendarMatch[1]);
+    }
+  }
+
+  const reminderMatch = url.pathname.match(/^\/api\/reminders\/([^/]+)$/);
+  if (reminderMatch) {
+    if (req.method === 'GET' || req.method === 'POST' || req.method === 'PUT') {
+      return handleReminderProfile(req, res, reminderMatch[1]);
+    }
   }
 
   // Calendar download (add to phone calendar)

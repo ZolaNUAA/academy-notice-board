@@ -1369,6 +1369,7 @@
     // ============ API ============
     const API = '/api/notices';
     const REMINDER_STORAGE_KEY = 'academyNoticeReminderIds:v1';
+    const REMINDER_DEVICE_KEY = 'academyNoticeReminderDeviceId:v1';
 
     // ============ Clipboard helper ============
     function copyToClipboard(text, successMsg = '已复制！') {
@@ -1400,6 +1401,33 @@
       localStorage.setItem(REMINDER_STORAGE_KEY, JSON.stringify([...ids]));
     }
 
+    function getReminderDeviceId() {
+      let id = localStorage.getItem(REMINDER_DEVICE_KEY);
+      if (!id) {
+        if (crypto?.randomUUID) {
+          id = crypto.randomUUID().replace(/-/g, '');
+        } else {
+          id = `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}`;
+        }
+        localStorage.setItem(REMINDER_DEVICE_KEY, id);
+      }
+      return id;
+    }
+
+    async function syncReminderProfile() {
+      const deviceId = getReminderDeviceId();
+      const ids = [...loadReminderIds()];
+      try {
+        await fetch(`/api/reminders/${encodeURIComponent(deviceId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reminders: ids })
+        });
+      } catch(e) {
+        console.error(e);
+      }
+    }
+
     function isNoticeReminded(id) {
       return loadReminderIds().has(String(id));
     }
@@ -1408,6 +1436,14 @@
       if (state._remindersImportedFromUrl) return;
       state._remindersImportedFromUrl = true;
       const params = new URLSearchParams(window.location.search);
+      const restoreId = params.get('restore');
+      if (restoreId) {
+        restoreReminderProfile(restoreId);
+        params.delete('restore');
+        const qs = params.toString();
+        history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+        return;
+      }
       const raw = params.get('reminders');
       if (!raw) return;
       const imported = raw.split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
@@ -1415,11 +1451,29 @@
       const ids = loadReminderIds();
       imported.forEach(id => ids.add(id));
       saveReminderIds(ids);
+      syncReminderProfile();
       state.reminderImportMessage = `已导入 ${imported.length} 条提醒到本机`;
       params.delete('reminders');
       const qs = params.toString();
       const cleanUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
       history.replaceState(null, '', cleanUrl);
+    }
+
+    async function restoreReminderProfile(deviceId) {
+      try {
+        const res = await fetch(`/api/reminders/${encodeURIComponent(deviceId)}`);
+        if (!res.ok) throw new Error('restore failed');
+        const profile = await res.json();
+        const ids = new Set((profile.reminders || []).map(String).filter(Boolean));
+        saveReminderIds(ids);
+        localStorage.setItem(REMINDER_DEVICE_KEY, profile.deviceId || deviceId);
+        state.reminderImportMessage = `已恢复 ${ids.size} 条提醒到本机`;
+        fetchReminderNotices();
+        render();
+      } catch(e) {
+        state.reminderImportMessage = '提醒恢复失败，备份链接可能已失效。';
+        render();
+      }
     }
 
     function getReminderNotices() {
@@ -3383,6 +3437,7 @@
         ids.add(String(noticeId));
       }
       saveReminderIds(ids);
+      syncReminderProfile();
       state.reminderImportMessage = '';
       render();
       fetchReminderNotices();
@@ -3395,6 +3450,7 @@
       const ids = loadReminderIds();
       expiredIds.forEach(id => ids.delete(id));
       saveReminderIds(ids);
+      syncReminderProfile();
       state.reminderImportMessage = '';
       render();
       fetchReminderNotices();
@@ -3403,30 +3459,21 @@
     window.clearAllReminders = function() {
       if (!confirm('确定清空本机保存的所有提醒吗？')) return;
       saveReminderIds(new Set());
+      syncReminderProfile();
       state.reminderNotices = [];
       state.reminderImportMessage = '';
       render();
     };
 
     window.copyMyReminderLink = function() {
-      const ids = [...loadReminderIds()];
-      if (!ids.length) {
-        alert('还没有选择提醒。');
-        return;
-      }
       const url = new URL(window.location.href);
-      url.searchParams.set('reminders', ids.map(encodeURIComponent).join(','));
+      url.searchParams.set('restore', getReminderDeviceId());
       copyToClipboard(url.href, '备份链接已复制。换手机或清缓存后，打开这个链接可恢复“我的提醒”；它不能导入手机日历。');
     };
 
     window.copyMyReminderCalendarUrl = function() {
-      const ids = [...loadReminderIds()];
-      if (!ids.length) {
-        alert('还没有选择提醒。');
-        return;
-      }
-      const url = new URL('/api/calendar-feed.ics', window.location.origin);
-      url.searchParams.set('ids', ids.map(encodeURIComponent).join(','));
+      syncReminderProfile();
+      const url = new URL(`/api/reminders/${encodeURIComponent(getReminderDeviceId())}/calendar.ics`, window.location.origin);
       copyToClipboard(url.href, '日历订阅地址已复制。请在手机日历中选择“添加订阅日历/URL日历”后粘贴。');
     };
 
