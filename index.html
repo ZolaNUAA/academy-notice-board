@@ -1325,6 +1325,7 @@
       pendingAttachments: [], // 待上传的附件（仅文件名）
       isSubmitting: false, // 防重复提交
       aiParsed: false, // 是否已使用AI解析
+      aiParsing: false, // AI是否正在解析中
       autoRefreshId: null, // 自动刷新定时器ID
       highlightNoticeId: null, // 新增通知高亮ID
       stats: null,
@@ -3539,6 +3540,7 @@
       state.showAddModal = false;
       state.addPreview = null;
       state.aiParsed = false;
+      state.aiParsing = false;
       state.pendingAttachments = [];
       const textarea = document.getElementById('addTextarea');
       if (textarea) textarea.value = '';
@@ -3634,9 +3636,11 @@
     };
 
     window.handleAIParse = async function() {
+      if (state.aiParsing) return; // 已在解析中，禁止重复触发
       const textarea = document.getElementById('addTextarea');
       const btn = document.getElementById('aiParseBtn');
       const status = document.getElementById('aiParseStatus');
+      const submitBtn = document.getElementById('addSubmitBtn');
       if (!textarea || !btn) return;
       const text = textarea.value;
       if (!text.trim()) return;
@@ -3644,9 +3648,12 @@
       // Save locally extracted links before AI replaces them
       const localLinks = (state.addPreview && state.addPreview.links) ? [...state.addPreview.links] : [];
 
+      state.aiParsing = true;
       btn.disabled = true;
       btn.textContent = '⏳ 解析中...';
       if (status) { status.textContent = '正在调用AI，约需5-15秒...'; status.style.color = '#888'; }
+      // 禁用提交按钮，提示等待
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ 等待AI解析...'; }
 
       try {
         const res = await fetch('/api/parse/llm', {
@@ -3676,8 +3683,10 @@
       } catch(e) {
         if (status) { status.textContent = '❌ 请求失败: ' + e.message; status.style.color = '#dc2626'; }
       } finally {
+        state.aiParsing = false;
         btn.disabled = false;
         btn.textContent = '🤖 AI智能解析';
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '解析添加'; }
       }
     };
 
@@ -3956,6 +3965,8 @@ window.handleLogin = async function() {
     window.handleAdd = async function() {
       // Guard against double-submit
       if (state.isSubmitting) return;
+      // Guard against submit while AI is parsing
+      if (state.aiParsing) { alert('AI正在解析中，请耐心等待解析完成后再提交。'); return; }
       state.isSubmitting = true;
 
       const textarea = document.getElementById('addTextarea');
