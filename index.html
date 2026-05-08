@@ -359,6 +359,22 @@
     .my-reminder-item.expired .my-reminder-meta { color: #6b7280; }
     .my-reminders-empty { font-size: 13px; color: #9a3412; line-height: 1.7; }
     .my-reminders-more { margin-top: 10px; display: flex; justify-content: center; }
+    .reminder-help-link {
+      color: #b45309;
+      font-weight: 600;
+      text-decoration: none;
+      border-bottom: 1px dotted currentColor;
+      cursor: pointer;
+    }
+    .reminder-help-link:hover { color: #92400e; }
+    .reminder-guide-list {
+      color: #431407;
+      font-size: 14px;
+      line-height: 1.8;
+      margin: 10px 0 0 18px;
+      padding: 0;
+    }
+    .reminder-guide-list li { margin: 6px 0; }
 
     /* Category Colors */
     .cat-research { background: linear-gradient(145deg, #fff7ed, #ffedd5); border-left: 4px solid #f97316; }
@@ -1016,6 +1032,9 @@
     body.dark-mode .my-reminder-meta { color: #fcd34d; }
     body.dark-mode .my-reminder-item.expired .my-reminder-meta { color: #94a3b8; }
     body.dark-mode .my-reminders-empty { color: #fcd34d; }
+    body.dark-mode .reminder-help-link { color: #fbbf24; }
+    body.dark-mode .reminder-help-link:hover { color: #fde68a; }
+    body.dark-mode .reminder-guide-list { color: #f8fafc; }
     body.dark-mode .key-points {
       background: rgba(15, 23, 42, 0.42);
       border-color: rgba(148, 163, 184, 0.18);
@@ -1312,6 +1331,7 @@
       reminderNotices: [],
       reminderLoading: false,
       reminderVisibleCount: 6,
+      showReminderGuide: false,
       selectedType: 'all',
       showExpired: false,
       search: '',
@@ -1548,8 +1568,11 @@
           <div class="my-reminders-panel">
             <div class="my-reminders-head">
               <div class="my-reminders-title">🔔 我的提醒</div>
+              <div class="my-reminders-actions">
+                <a class="reminder-help-link" href="#" onclick="openReminderGuide(event)">如何添加提醒到日历</a>
+              </div>
             </div>
-            <div class="my-reminders-empty">点通知卡片上的“提醒我”，以后用同一台手机微信打开看板时，会优先看到自己关注的通知。</div>
+            <div class="my-reminders-empty">点通知卡片上的“提醒我”，以后用同一台手机微信打开看板时，会优先看到自己关注的通知。需要同步到手机或电脑日历？<a class="reminder-help-link" href="#" onclick="openReminderGuide(event)">如何添加提醒到日历</a></div>
           </div>
         `;
       }
@@ -1559,6 +1582,7 @@
           <div class="my-reminders-head">
             <div class="my-reminders-title">🔔 我的提醒 ${ids.size ? `<span class="badge">${ids.size}</span>` : ''}</div>
             <div class="my-reminders-actions">
+              <a class="reminder-help-link" href="#" onclick="openReminderGuide(event)">如何添加提醒到日历</a>
               ${ids.size ? `<button type="button" class="btn btn-secondary btn-sm" onclick="copyMyReminderLink()">备份我的提醒</button>` : ''}
               ${ids.size ? `<button type="button" class="btn btn-secondary btn-sm" onclick="copyMyReminderCalendarUrl()">复制日历订阅地址</button>` : ''}
               ${expiredItems.length ? `<button type="button" class="btn btn-secondary btn-sm" onclick="clearExpiredReminders()">清除过期</button>` : ''}
@@ -2186,6 +2210,24 @@
               <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="state.showLoginModal=false;render()">取消</button>
                 <button type="button" id="loginPwdBtn" class="btn btn-primary" onclick="handleLogin()">登录</button>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+
+        ${state.showReminderGuide ? `
+          <div class="modal-overlay" onclick="closeReminderGuide()">
+            <div class="modal" onclick="event.stopPropagation()">
+              <h2>🔔 如何添加提醒到日历</h2>
+              <p>提醒会先保存到当前设备；如果要让手机或电脑日历自动提醒，请再复制日历订阅地址。</p>
+              <ol class="reminder-guide-list">
+                <li>在通知卡片上找到带截止日期的通知，点击“提醒我”。</li>
+                <li>回到页面顶部“我的提醒”，确认这条通知已经出现。</li>
+                <li>需要系统日历提醒时，点击“复制日历订阅地址”，在手机或电脑日历中添加 URL 订阅日历。</li>
+                <li>换手机或清理微信缓存前，点击“备份我的提醒”，在新设备打开备份链接即可恢复。</li>
+              </ol>
+              <div class="modal-actions">
+                <button type="button" class="btn btn-primary" onclick="closeReminderGuide()">知道了</button>
               </div>
             </div>
           </div>
@@ -3465,6 +3507,20 @@
     // ============ Handlers ============
     window.loadMoreReminders = function() {
       state.reminderVisibleCount = Math.min(getReminderNotices().length, (state.reminderVisibleCount || 6) + 6);
+      render();
+    };
+
+    window.openReminderGuide = function(event) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      state.showReminderGuide = true;
+      render();
+    };
+
+    window.closeReminderGuide = function() {
+      state.showReminderGuide = false;
       render();
     };
 
