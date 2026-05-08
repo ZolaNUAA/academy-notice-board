@@ -1572,7 +1572,7 @@
                 <a class="reminder-help-link" href="#" onclick="openReminderGuide(event)">如何添加提醒到日历</a>
               </div>
             </div>
-            <div class="my-reminders-empty">点通知卡片上的“提醒我”，以后用同一台手机微信打开看板时，会优先看到自己关注的通知。需要同步到手机或电脑日历？<a class="reminder-help-link" href="#" onclick="openReminderGuide(event)">如何添加提醒到日历</a></div>
+            <div class="my-reminders-empty">点通知卡片上的"提醒我"，以后用同一台手机微信打开看板时，会优先看到自己关注的通知。需要同步到手机或电脑日历？<a class="reminder-help-link" href="#" onclick="openReminderGuide(event)">如何添加提醒到日历</a></div>
           </div>
         `;
       }
@@ -2217,16 +2217,59 @@
 
         ${state.showReminderGuide ? `
           <div class="modal-overlay" onclick="closeReminderGuide()">
-            <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal" onclick="event.stopPropagation()" style="max-width:600px;max-height:80vh;overflow-y:auto">
               <h2>🔔 如何添加提醒到日历</h2>
-              <p>提醒会先保存到当前设备；如果要让手机或电脑日历自动提醒，请再复制日历订阅地址。</p>
-              <ol class="reminder-guide-list">
-                <li>在通知卡片上找到带截止日期的通知，点击“提醒我”。</li>
-                <li>回到页面顶部“我的提醒”，确认这条通知已经出现。</li>
-                <li>需要系统日历提醒时，点击“复制日历订阅地址”，在手机或电脑日历中添加 URL 订阅日历。</li>
-                <li>换手机或清理微信缓存前，点击“备份我的提醒”，在新设备打开备份链接即可恢复。</li>
+              <p style="color:#666;font-size:13px;margin-bottom:12px">提醒先保存在当前设备；如需手机/电脑日历自动弹通知，请复制日历订阅地址并按下方说明操作。</p>
+
+              <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#92400e">
+                <strong>🔄 订阅后自动更新：</strong>日历订阅不是一次性导入，而是持续同步的。你在看板新增提醒后，手机/电脑日历会在 <strong>几小时内自动刷新</strong>，无需重新订阅。
+              </div>
+
+              <h3 style="font-size:15px;margin:14px 0 8px;color:#1f2937">📱 iOS / iPadOS（iPhone、iPad）</h3>
+              <ol class="reminder-guide-list" style="font-size:13px;line-height:1.8">
+                <li>打开<strong>设置</strong> → <strong>日历</strong> → <strong>账户</strong> → <strong>添加账户</strong></li>
+                <li>选择<strong>"其他"</strong> → <strong>"添加已订阅的日历"</strong></li>
+                <li>粘贴复制的日历订阅地址，点击<strong>"下一步"</strong> → <strong>"存储"</strong></li>
+                <li>打开<strong>日历 App</strong>，在"日历"列表中勾选刚添加的订阅即可看到</li>
               </ol>
-              <div class="modal-actions">
+
+              <h3 style="font-size:15px;margin:14px 0 8px;color:#1f2937">📱 Android（华为、小米、OPPO、vivo、三星等）</h3>
+              <ol class="reminder-guide-list" style="font-size:13px;line-height:1.8">
+                <li>打开手机自带的<strong>日历 App</strong></li>
+                <li>找到<strong>"订阅"</strong>或<strong>"添加日历"</strong>功能（通常在侧边栏、设置或右上角菜单）</li>
+                <li>选择<strong>"URL 订阅"</strong>或<strong>"订阅日历"</strong>或<strong>"添加网络日历"</strong></li>
+                <li>粘贴复制的日历订阅地址，确认添加</li>
+                <li>如自带日历不支持 URL 订阅，可安装 <strong>Google 日历</strong> App：
+                  <br>Google 日历 → 左上角菜单 → 设置 → 添加日历 → 通过网址添加 → 粘贴地址
+                </li>
+              </ol>
+
+              <h3 style="font-size:15px;margin:14px 0 8px;color:#1f2937">💻 macOS（Mac 电脑）</h3>
+              <ol class="reminder-guide-list" style="font-size:13px;line-height:1.8">
+                <li>打开<strong>日历 App</strong></li>
+                <li>菜单栏：<strong>文件</strong> → <strong>新建日历订阅…</strong></li>
+                <li>粘贴日历订阅地址，点击<strong>"订阅"</strong></li>
+                <li>可修改名称和颜色，点击<strong>"好"</strong></li>
+                <li>自动刷新频率选择<strong>"每15分钟"</strong>或<strong>"每小时"</strong>即可</li>
+              </ol>
+
+              <h3 style="font-size:15px;margin:14px 0 8px;color:#1f2937">🪟 Windows</h3>
+              <ol class="reminder-guide-list" style="font-size:13px;line-height:1.8">
+                <li>打开<strong>日历 App</strong>（系统自带）</li>
+                <li>左下角齿轮图标 → <strong>管理账户</strong> → <strong>添加账户</strong></li>
+                <li>选择<strong>"iCloud"</strong>（通过 iCloud 同步）或使用 Outlook 网页版的<strong>"添加日历"</strong> → <strong>"通过 Internet 订阅"</strong></li>
+                <li>粘贴日历订阅地址完成添加</li>
+                <li>提示：Windows 日历对 ICS 订阅支持有限，建议同步到 Google/Outlook 网页日历后查看</li>
+              </ol>
+
+              <h3 style="font-size:15px;margin:14px 0 8px;color:#1f2937">🌐 通用方案（Google 日历 / Outlook 网页版）</h3>
+              <ol class="reminder-guide-list" style="font-size:13px;line-height:1.8">
+                <li><strong>Google 日历：</strong>左侧"其他日历" → "+" → "通过网址添加" → 粘贴地址 → "添加日历"</li>
+                <li><strong>Outlook 网页版：</strong>左侧"添加日历" → "通过 Internet 订阅" → 粘贴地址 → "导入"</li>
+                <li>这两个平台订阅后，所有登录同一账号的设备都会自动同步</li>
+              </ol>
+
+              <div class="modal-actions" style="margin-top:16px">
                 <button type="button" class="btn btn-primary" onclick="closeReminderGuide()">知道了</button>
               </div>
             </div>
@@ -3573,13 +3616,13 @@
     window.copyMyReminderLink = function() {
       const url = new URL(window.location.href);
       url.searchParams.set('restore', getReminderDeviceId());
-      copyToClipboard(url.href, '备份链接已复制。换手机或清缓存后，打开这个链接可恢复“我的提醒”；它不能导入手机日历。');
+      copyToClipboard(url.href, '备份链接已复制。换手机或清缓存后，打开这个链接可恢复"我的提醒"；它不能导入手机日历。');
     };
 
     window.copyMyReminderCalendarUrl = function() {
       syncReminderProfile();
       const url = new URL(`/api/reminders/${encodeURIComponent(getReminderDeviceId())}/calendar.ics`, window.location.origin);
-      copyToClipboard(url.href, '日历订阅地址已复制。请在手机日历中选择“添加订阅日历/URL日历”后粘贴。');
+      copyToClipboard(url.href, '日历订阅地址已复制。请在手机日历中选择"添加订阅日历/URL日历"后粘贴。');
     };
 
     window.doSearch = function() {
@@ -4203,7 +4246,7 @@ window.handleLogin = async function() {
       const safeTitle = notice?.title || '通知截止提醒';
 
       if (isWeChatBrowser()) {
-        copyToClipboard(absoluteUrl, '日历链接已复制。微信内无法直接添加日历，请点右上角“...”选择在浏览器打开后再添加。');
+        copyToClipboard(absoluteUrl, '日历链接已复制。微信内无法直接添加日历，请点右上角"..."选择在浏览器打开后再添加。');
         return;
       }
 
