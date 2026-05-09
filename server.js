@@ -411,13 +411,54 @@ function logOperation(action, details) {
 
 function getRequestMeta(req) {
   const admin = getSessionAdmin(req);
-  const ipRaw = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
   return {
     admin: admin?.username,
     role: admin?.role,
-    ip: ipRaw.replace('::ffff:', '').split(',')[0].trim(),
+    ip: getClientIp(req),
     userAgent: req.headers['user-agent'] || ''
   };
+}
+
+function getClientIp(req) {
+  const ipRaw = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  return ipRaw.replace('::ffff:', '').split(',')[0].trim();
+}
+
+function normalizeVisitorBrowser(ua) {
+  const raw = String(ua || '').trim();
+  if (!raw) return 'unknown';
+
+  let browser = 'other';
+  if (/MicroMessenger\//i.test(raw)) browser = 'wechat';
+  else if (/Edg\//i.test(raw)) browser = 'edge';
+  else if (/Firefox\//i.test(raw)) browser = 'firefox';
+  else if (/(OPR|Opera)\//i.test(raw)) browser = 'opera';
+  else if (/CriOS\//i.test(raw) || (/Chrome\//i.test(raw) && !/Chromium/i.test(raw))) browser = 'chrome';
+  else if (/Version\/[\d.]+.*Safari/i.test(raw) || (/Safari\//i.test(raw) && !/Chrome/i.test(raw))) browser = 'safari';
+  else if (/curl\//i.test(raw)) browser = 'curl';
+  else if (/bot|spider|crawler|slurp|bingpreview|bytespider|headless/i.test(raw)) browser = 'bot';
+
+  let osName = 'unknown-os';
+  if (/iPhone/i.test(raw)) osName = 'ios';
+  else if (/iPad/i.test(raw)) osName = 'ipados';
+  else if (/Android/i.test(raw)) osName = 'android';
+  else if (/Windows NT/i.test(raw)) osName = 'windows';
+  else if (/Mac OS X/i.test(raw)) osName = 'macos';
+  else if (/Linux/i.test(raw)) osName = 'linux';
+
+  const device = /iPad|Tablet/i.test(raw) ? 'tablet' : (/Mobile|iPhone|Android/i.test(raw) ? 'mobile' : 'desktop');
+  return `${browser}:${osName}:${device}`;
+}
+
+function getVisitId(ip, ua) {
+  const normalizedIp = String(ip || '').trim();
+  if (!normalizedIp && !ua) return null;
+  const fingerprint = `${normalizedIp}|${normalizeVisitorBrowser(ua)}`;
+  return crypto.createHash('sha256').update(fingerprint).digest('hex').slice(0, 16);
+}
+
+function getVisitIdCount() {
+  return access.visitIds instanceof Set ? access.visitIds.size : 0;
 }
 
 function summarizeNotice(notice) {
@@ -502,7 +543,7 @@ function saveConfig(config) {
 
 // ============ Access Stats (derived from operation.log) ============
 function rebuildAccessFromLog() {
-  const access = { visits: 0, lastVisit: null, dailyVisits: {}, recentAccess: [] };
+  const access = { visits: 0, lastVisit: null, dailyVisits: {}, recentAccess: [], visitIds: new Set() };
   try {
     if (!fs.existsSync(LOG_FILE)) return access;
     const content = fs.readFileSync(LOG_FILE, 'utf-8');
@@ -522,6 +563,8 @@ function rebuildAccessFromLog() {
           ua: (entry.userAgent || '').substring(0, 120),
           auth: entry.role || 'admin'
         });
+        const visitId = getVisitId(entry.ip || '', entry.userAgent || '');
+        if (visitId) access.visitIds.add(visitId);
       } catch {} // skip corrupt lines
     }
     // Keep only last 60 recentAccess entries
@@ -580,6 +623,7 @@ if (access.visits === 0 && (config.visits || config.dailyVisits)) {
   access.lastVisit = config.lastVisit || null;
   access.dailyVisits = config.dailyVisits || {};
   access.recentAccess = (config.recentAccess || []).slice(0, 60);
+  access.visitIds = new Set(access.recentAccess.map(r => getVisitId(r.ip || '', r.ua || r.userAgent || '')).filter(Boolean));
   console.log('[Access] Migrated', access.visits, 'visits from old config.json');
 }
 // Clean up migrated fields from config
@@ -1847,8 +1891,7 @@ async function handleLogin(req, res) {
     const { password } = await parseJSONBody(req);
     if (!password) return sendJSON(res, 400, { error: 'password required' });
 
-    const ipRaw = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-    const ip = ipRaw.replace('::ffff:', '').split(',')[0].trim();
+    const ip = getClientIp(req);
     const ua = req.headers['user-agent'] || '';
 
     // 检查频率限制
@@ -2715,6 +2758,7 @@ async function handleVisitStats(req, res) {
       .map(([city, count]) => ({ city, count }));
     sendJSON(res, 200, {
       totalVisits: access.visits || 0,
+      visitIdCount: getVisitIdCount(),
       todayVisits,
       thisWeekVisits,
       dailyVisits: days,
@@ -2727,7 +2771,7 @@ async function handleVisitStats(req, res) {
     });
   } catch(e) {
     console.error('[VisitStats] Error:', e.message);
-    sendJSON(res, 200, { totalVisits: access.visits || 0, todayVisits: 0, thisWeekVisits: 0, dailyVisits: [], recentAccess: [] });
+    sendJSON(res, 200, { totalVisits: access.visits || 0, visitIdCount: getVisitIdCount(), todayVisits: 0, thisWeekVisits: 0, dailyVisits: [], recentAccess: [] });
   }
 }
 
@@ -3059,8 +3103,11 @@ function handleStats(req, res) {
     }
   }
 
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  const ip = getClientIp(req);
   const ua = (req.headers['user-agent'] || '').substring(0, 120);
+  if (!(access.visitIds instanceof Set)) access.visitIds = new Set();
+  const visitId = getVisitId(ip, ua);
+  if (visitId) access.visitIds.add(visitId);
 
   // Update in-memory cache (persistent stats rebuilt from LOGIN entries in operation.log)
   if (auth) {
@@ -3095,6 +3142,7 @@ function handleStats(req, res) {
   const expiredNotices = notices.filter(n => n.expired).length;
   sendJSON(res, 200, {
     totalVisits: access.visits || 0,
+    visitIdCount: getVisitIdCount(),
     lastVisit: access.lastVisit,
     todayNotices: todayCount,
     totalNotices: notices.length,
