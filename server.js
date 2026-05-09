@@ -2311,7 +2311,7 @@ function handlePOST(req, res) {
         if (!text) return sendJSON(res, 400, { error: 'text required' });
         const parserConfig = config.parser;
         const useLLM = parserConfig.enabled && parserConfig.useOnSubmit;
-        const newNotices = (await dispatchParse(text, useLLM ? parserConfig : null)).map(refreshExpiredStatus);
+        const newNotices = (await dispatchParse(text, useLLM ? parserConfig : null)).map(n => refreshExpiredStatus(n));
 
         // Attach files to first notice (or all if needed)
         if (attachments.length > 0 && newNotices.length > 0) {
@@ -2344,7 +2344,7 @@ function handlePOST(req, res) {
         if (!text) return sendJSON(res, 400, { error: 'text required' });
         const parserConfig = config.parser;
         const useLLM = parserConfig.enabled && parserConfig.useOnSubmit;
-        const newNotices = (await dispatchParse(text, useLLM ? parserConfig : null)).map(refreshExpiredStatus);
+        const newNotices = (await dispatchParse(text, useLLM ? parserConfig : null)).map(n => refreshExpiredStatus(n));
         await modifyNotices(existing => [...existing, ...newNotices]);
         logOperation('NOTICE_CREATE', {
           ...getRequestMeta(req),
