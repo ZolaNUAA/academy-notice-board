@@ -2016,9 +2016,32 @@ function sendJSON(res, status, data, extraHeaders = {}) {
   res.end(JSON.stringify(data));
 }
 
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n >= 1024 * 1024) return `${Math.round(n / 1024 / 1024)}MB`;
+  if (n >= 1024) return `${Math.round(n / 1024)}KB`;
+  return `${n}B`;
+}
+
+function getConfiguredMaxBodySize() {
+  return config.limits?.maxBodySize || 2 * 1024 * 1024;
+}
+
+function getConfiguredMaxFileSize() {
+  return config.limits?.maxFileSize || 5 * 1024 * 1024;
+}
+
+function getMultipartBodyLimit() {
+  const bodyLimit = getConfiguredMaxBodySize();
+  const fileLimit = getConfiguredMaxFileSize();
+  // Multipart requests include form boundaries and text fields. A configured file
+  // limit should not be made unusable by a smaller generic JSON/body limit.
+  return Math.max(bodyLimit, fileLimit + 2 * 1024 * 1024);
+}
+
 function parseJSONBody(req) {
   return new Promise((resolve, reject) => {
-    const maxBodySize = config.limits?.maxBodySize || 2 * 1024 * 1024;
+    const maxBodySize = getConfiguredMaxBodySize();
     let body = '';
     let totalSize = 0;
     req.on('data', chunk => {
@@ -2243,11 +2266,25 @@ function handlePOST(req, res) {
     const boundary = contentType.split('boundary=')[1];
     if (!boundary) return sendJSON(res, 400, { error: 'missing boundary' });
 
-    const maxFileSize = (config.limits?.maxFileSize) || 20 * 1024 * 1024;
+    const maxFileSize = getConfiguredMaxFileSize();
+    const maxBodySize = getMultipartBodyLimit();
 
     const chunks = [];
-    req.on('data', chunk => chunks.push(chunk));
+    let totalSize = 0;
+    let tooLarge = false;
+    req.on('data', chunk => {
+      if (tooLarge) return;
+      totalSize += chunk.length;
+      if (totalSize > maxBodySize) {
+        tooLarge = true;
+        sendJSON(res, 413, { error: `Request body too large (max ${formatBytes(maxBodySize)})` });
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', async () => {
+      if (tooLarge) return;
       try {
         const buffer = Buffer.concat(chunks);
         const parts = parseMultipart(buffer, boundary);
@@ -2260,7 +2297,7 @@ function handlePOST(req, res) {
             text = part.content;
           } else if (part.name === 'attachments' && part.isFile) {
             if (part.content.length > maxFileSize) {
-              return sendJSON(res, 400, { error: 'Attachment too large (max 5MB)' });
+              return sendJSON(res, 400, { error: `Attachment too large (max ${formatBytes(maxFileSize)})` });
             }
             const result = await storage.uploadAttachment(part.content, part.filename);
             // Store both original name (for display) and saved name (for URL)
@@ -2333,20 +2370,25 @@ function handleImageUpload(req, res) {
   const boundary = contentType.split('boundary=')[1];
   if (!boundary) return sendJSON(res, 400, { error: 'missing boundary' });
 
-  const maxFileSize = (config.limits?.maxFileSize) || 5 * 1024 * 1024;
-  const maxBodySize = config.limits?.maxBodySize || 2 * 1024 * 1024;
+  const maxFileSize = getConfiguredMaxFileSize();
+  const maxBodySize = getMultipartBodyLimit();
 
   const chunks = [];
   let totalSize = 0;
+  let tooLarge = false;
   req.on('data', chunk => {
+    if (tooLarge) return;
     totalSize += chunk.length;
     if (totalSize > maxBodySize) {
+      tooLarge = true;
+      sendJSON(res, 413, { error: `Request body too large (max ${formatBytes(maxBodySize)})` });
       req.destroy();
       return;
     }
     chunks.push(chunk);
   });
   req.on('end', async () => {
+    if (tooLarge) return;
     try {
       const buffer = Buffer.concat(chunks);
       const parts = parseMultipart(buffer, boundary);
@@ -2354,7 +2396,7 @@ function handleImageUpload(req, res) {
       for (const part of parts) {
         if (part.name === 'image' && part.isFile) {
           if (part.content.length > maxFileSize) {
-            return sendJSON(res, 400, { error: 'File too large (max 5MB)' });
+            return sendJSON(res, 400, { error: `File too large (max ${formatBytes(maxFileSize)})` });
           }
           const ext = path.extname(part.filename || '.png').toLowerCase();
           const allowedExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', 'bmp'];
@@ -2726,13 +2768,16 @@ async function handleLimits(req, res) {
     }
 
     const validLimits = {};
-    if (limits.maxBodySize) validLimits.maxBodySize = Math.min(Math.max(1024, parseInt(limits.maxBodySize)), 10 * 1024 * 1024);
+    if (limits.maxBodySize) validLimits.maxBodySize = Math.min(Math.max(1024, parseInt(limits.maxBodySize)), 100 * 1024 * 1024);
     if (limits.maxFileSize) validLimits.maxFileSize = Math.min(Math.max(1024, parseInt(limits.maxFileSize)), 50 * 1024 * 1024);
     if (limits.requestTimeout) validLimits.requestTimeout = Math.min(Math.max(5000, parseInt(limits.requestTimeout)), 120000);
     if (limits.maxLogSize) validLimits.maxLogSize = Math.min(Math.max(1024 * 1024, parseInt(limits.maxLogSize)), 100 * 1024 * 1024);
     if (limits.pageLimit) validLimits.pageLimit = Math.min(Math.max(10, parseInt(limits.pageLimit)), 100);
 
     config.limits = { ...config.limits, ...validLimits };
+    if (config.limits.maxFileSize && config.limits.maxBodySize < config.limits.maxFileSize + 2 * 1024 * 1024) {
+      config.limits.maxBodySize = Math.min(config.limits.maxFileSize + 2 * 1024 * 1024, 100 * 1024 * 1024);
+    }
     saveConfig(config);
 
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
@@ -3324,8 +3369,10 @@ function serveStatic(req, res) {
 
 // ============ Router ============
 const server = http.createServer((req, res) => {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
   const limits = config.limits || {};
-  const maxBodySize = limits.maxBodySize || 2 * 1024 * 1024;
+  const isMultipart = (req.headers['content-type'] || '').includes('multipart/form-data');
+  const maxBodySize = isMultipart ? getMultipartBodyLimit() : (limits.maxBodySize || 2 * 1024 * 1024);
   const requestTimeout = limits.requestTimeout || 30000;
 
   // Set server timeout for slow-loris protection
@@ -3336,11 +3383,9 @@ const server = http.createServer((req, res) => {
   let contentLength = parseInt(req.headers['content-length'] || '0');
   if (contentLength > maxBodySize) {
     res.writeHead(413, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Request body too large (max 2MB)' }));
+    res.end(JSON.stringify({ error: `Request body too large (max ${formatBytes(maxBodySize)})` }));
     return;
   }
-
-  const url = new URL(req.url, `http://localhost:${PORT}`);
 
   // CORS preflight
   if (req.method === 'OPTIONS') {

@@ -2734,15 +2734,15 @@
               <div class="limit-item">
                 <label style="font-size:12px;color:#666">请求体最大 size</label>
                 <div style="display:flex;align-items:center;gap:8px">
-                  <input type="number" id="limit_maxBodySize" value="${l.maxBodySize}" min="1024" max="10485760" step="1024" style="width:120px;padding:6px 8px;border:1px solid #ddd;border-radius:6px">
-                  <span style="font-size:11px;color:#888">bytes (1KB-10MB)</span>
+                  <input type="number" id="limit_maxBodySize" value="${l.maxBodySize}" min="1024" max="104857600" step="1024" style="width:120px;padding:6px 8px;border:1px solid #ddd;border-radius:6px">
+                  <span style="font-size:11px;color:#888">bytes (1KB-100MB，上传总大小)</span>
                 </div>
               </div>
               <div class="limit-item">
                 <label style="font-size:12px;color:#666">文件最大 size</label>
                 <div style="display:flex;align-items:center;gap:8px">
                   <input type="number" id="limit_maxFileSize" value="${l.maxFileSize}" min="1024" max="52428800" step="1024" style="width:120px;padding:6px 8px;border:1px solid #ddd;border-radius:6px">
-                  <span style="font-size:11px;color:#888">bytes (1KB-50MB)</span>
+                  <span style="font-size:11px;color:#888">bytes (1KB-50MB，单个文件)</span>
                 </div>
               </div>
               <div class="limit-item">

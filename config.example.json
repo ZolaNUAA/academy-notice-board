@@ -13,7 +13,7 @@
   "visits": 0,
   "lastVisit": null,
   "limits": {
-    "maxBodySize": 2097152,
+    "maxBodySize": 7340032,
     "maxFileSize": 5242880,
     "requestTimeout": 30000,
     "maxLogSize": 10485760,
