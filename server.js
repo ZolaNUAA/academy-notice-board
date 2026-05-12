@@ -2459,6 +2459,62 @@ function handleImageUpload(req, res) {
   });
 }
 
+// Generic file upload handler (any file type)
+async function handleFileUpload(req, res) {
+  const contentType = req.headers['content-type'] || '';
+  if (!contentType.includes('multipart/form-data')) {
+    return sendJSON(res, 400, { error: 'multipart required' });
+  }
+  const boundary = contentType.split('boundary=')[1];
+  if (!boundary) return sendJSON(res, 400, { error: 'missing boundary' });
+
+  const maxFileSize = getConfiguredMaxFileSize();
+  const maxBodySize = getMultipartBodyLimit();
+
+  const chunks = [];
+  let totalSize = 0;
+  let tooLarge = false;
+  req.on('data', chunk => {
+    if (tooLarge) return;
+    totalSize += chunk.length;
+    if (totalSize > maxBodySize) {
+      tooLarge = true;
+      sendJSON(res, 413, { error: `Request body too large (max ${formatBytes(maxBodySize)})` });
+      req.destroy();
+      return;
+    }
+    chunks.push(chunk);
+  });
+  req.on('end', async () => {
+    if (tooLarge) return;
+    try {
+      const buffer = Buffer.concat(chunks);
+      const parts = parseMultipart(buffer, boundary);
+
+      let uploaded = null;
+      for (const part of parts) {
+        if (part.isFile) {
+          if (part.content.length > maxFileSize) {
+            return sendJSON(res, 400, { error: `File too large (max ${formatBytes(maxFileSize)})` });
+          }
+          const ext = path.extname(part.filename || '.bin').toLowerCase();
+          const isImage = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'].includes(ext);
+          const result = isImage
+            ? await storage.uploadImage(part.content, part.filename)
+            : await storage.uploadAttachment(part.content, part.filename);
+          uploaded = { url: result.url, name: result.name, size: result.size, savedName: result.name };
+          if (result.fileID) uploaded.fileID = result.fileID;
+          break;
+        }
+      }
+      if (!uploaded) return sendJSON(res, 400, { error: 'No file uploaded' });
+      sendJSON(res, 200, uploaded);
+    } catch(e) {
+      sendJSON(res, 500, { error: 'Upload error: ' + e.message });
+    }
+  });
+}
+
 async function handleAddDirect(req, res) {
   // Add a pre-parsed notice directly (from edited preview)
   try {
@@ -3497,6 +3553,14 @@ const server = http.createServer((req, res) => {
     if (req.method === 'POST') {
       if (!requireAdmin(req, res)) return;
       return handleImageUpload(req, res);
+    }
+  }
+
+  // Generic file upload (any type)
+  if (url.pathname === '/api/upload') {
+    if (req.method === 'POST') {
+      if (!requireAdmin(req, res)) return;
+      return handleFileUpload(req, res);
     }
   }
 

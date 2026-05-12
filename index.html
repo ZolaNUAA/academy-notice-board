@@ -4342,9 +4342,8 @@ window.handleLogin = async function() {
         for (const pf of state._editPendingFiles) {
           try {
             const formData = new FormData();
-            formData.append('image', pf.file);
-            const endpoint = pf.isImage ? '/api/image' : '/api/notices';
-            const res = await fetch(endpoint, { method: 'POST', body: formData });
+            formData.append('file', pf.file);
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
             const data = await res.json();
             if (data.url) {
               if (pf.isImage) {
